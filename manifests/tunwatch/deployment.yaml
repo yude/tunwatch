@@ -18,7 +18,8 @@ spec:
       automountServiceAccountToken: false
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
-      # Label exactly one sensor node; interface names are those of this node.
+      # Eligible nodes must have a node_profiles entry for their host interfaces.
+      # A single replica monitors the segment visible from its scheduled node.
       nodeSelector:
         tunwatch.io/sensor: "true"
       terminationGracePeriodSeconds: 20
@@ -33,6 +34,10 @@ spec:
           imagePullPolicy: Always
           args: ["-config", "/etc/tunwatch/config.json"]
           env:
+            - name: TUNWATCH_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
             - name: TUNWATCH_API_TOKEN
               valueFrom:
                 secretKeyRef:

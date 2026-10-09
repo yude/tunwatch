@@ -8,7 +8,7 @@ Base URL: `http://127.0.0.1:8080`（既定）。時刻は RFC 3339 UTC です。
 | `GET /readyz` | 監視準備完了時 200、未完了時 503。認証不要 |
 | `GET /api/v1/devices` | `{ "time": "...", "devices": [...] }` |
 | `GET /api/v1/events` | `{ "events": [...], "next_cursor": "..." }`、新しい順 |
-| `GET /api/v1/status` | readiness、設定、件数、捕捉・通知のカウンター。秘密情報は含めない |
+| `GET /api/v1/status` | readiness、`node_name`、解決済みの設定、件数、捕捉・通知のカウンター。秘密情報や他ノードの profile は含めない |
 | `GET /api/v1/stream` | SSE `snapshot` イベント、2 秒間隔。最大 16 接続 |
 | `POST /api/v1/session` | JSON `{ "token": "..." }` から cookie を設定、204 |
 | `DELETE /api/v1/session` | cookie を削除、204 |

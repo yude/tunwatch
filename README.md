@@ -71,8 +71,8 @@ Docker での capability 有効化の互換性を確保するため、コンテ�
 
 [`manifests/tunwatch`](manifests/tunwatch) は、`yudejp/k8s/manifests` のリソース分割、ConfigMap generator、Longhorn PVC、Recreate、プローブ、リソース制限の構成を参考にしています。
 
-1. `config.json` の `interfaces` を**監視ノードの**インターフェース名に変更します。
-2. `tunwatch.io/sensor=true` ラベルを付けるノードを **1 台**選びます。複数のセンサーを同じ DB に接続する構成ではありません。
+1. `config.json` の `node_profiles` に、配置候補の **実際の Node 名**と各ノードの VLAN インターフェース名を設定します。付属の `sensor-a` / `sensor-b` は置き換えが必要な例です。
+2. 同じ監視対象 L2 セグメントへ接続された配置候補ノードに `tunwatch.io/sensor=true` ラベルを付けます。候補は複数指定できますが、稼働する Pod は **1 台**です。複数のセンサーを同じ DB に接続する構成ではありません。
 3. `pvc.yaml` の StorageClass、リソース制限、待受アドレス・ポートを環境に合わせます。
 4. `kustomization.yaml` のイメージを運用する SHA タグまたは digest に固定します。
 5. Namespace、Secret、マニフェストを用意します。
@@ -97,6 +97,28 @@ kubectl -n tunwatch port-forward service/tunwatch 8080:8080
 
 ConfigMap generator により設定変更で Pod が更新されます。Secret の変更は `kubectl -n tunwatch rollout restart deployment/tunwatch` で反映します。本リポジトリの作成・CI は実クラスターへの適用を行いません。
 
+### ノードごとに VLAN インターフェース名が異なる場合
+
+マニフェストは [Downward API](https://kubernetes.io/docs/concepts/workloads/pods/downward-api/) の `spec.nodeName` を `TUNWATCH_NODE_NAME` に渡します。tunwatch が対応する設定を起動時に選ぶため、Kubernetes API の参照や追加の RBAC 権限は不要です。
+
+```json
+{
+  "node_profiles": {
+    "sensor-a": { "interfaces": ["eno1.30", "eno1.40"] },
+    "sensor-b": { "interfaces": ["enp3s0.30", "enp3s0.40"] }
+  },
+  "networks": ["192.168.30.0/24", "192.168.40.0/24"]
+}
+```
+
+これは設定の抜粋です。Pod が `sensor-b` に配置されると `enp3s0.30` / `enp3s0.40` を監視します。各 profile に `networks` を指定すると共通 CIDR を置き換え、省略すると継承します。`"networks": []` は直結ネットワークの自動選択に戻します（`active_arp: true` では許可しません）。Web UI の監視設定と `/api/v1/status` に、選択されたノード名・実際のインターフェース・CIDR を表示します。
+
+`node_profiles` を使用する場合、ノード名未指定・未登録ノード・空のインターフェース一覧では起動しません。共通 `interfaces` へ暗黙にフォールバックしないため、別の VLAN を誤って監視することを防ぎます。待機ノードの profile も起動時に検証します。`node_profiles` を省略すれば従来の共通 `interfaces` 設定を引き続き使えます。
+
+VLAN インターフェース自体は各ノードの OS / ネットワーク管理設定で事前に作成してください。Kubernetes や tunwatch が VLAN を作成する機能ではありません。`hostNetwork` により、Pod からそのノードの既存インターフェースを使用します。存在しない、または down のインターフェースは起動エラーです。
+
+単一 Pod の移動先を切り替える構成なので、監視中なのは配置されたノードから見えるセグメントだけです。ノードごとに異なるネットワークを同時監視する DaemonSet / 集約構成ではありません。再配置には PVC の再接続が必要で、監視の中断時間もあります。履歴の端末 ID はインターフェース名を含むため、別名のインターフェースへ移動した場合は別 ID になります。過去の端末は再観測待ちとなり、移動だけを理由に切断通知を送りません。
+
 ## 設定
 
 JSON の未知のキー、不正な期間、重複インターフェース、過大な探索範囲は起動エラーにします。ファイル変更の反映には再起動が必要です。Web UI からは現在値を確認できます。
@@ -104,7 +126,8 @@ JSON の未知のキー、不正な期間、重複インターフェース、過
 | キー | 既定値 | 意味 |
 | --- | --- | --- |
 | `listen` | `127.0.0.1:8080` | HTTP 待受 |
-| `interfaces` | 必須 | 対象 Ethernet / bridge / VLAN インターフェース名 |
+| `interfaces` | 未指定 | 共通の対象 Ethernet / bridge / VLAN インターフェース名。`node_profiles` 未使用時は必須 |
+| `node_profiles` | 未指定 | Node 名 → `interfaces` / 任意の `networks`。指定時はこの profile の interfaces が必須 |
 | `networks` | `[]` | CIDR フィルター。空なら各インターフェースの直結アドレス範囲 |
 | `data_dir` | `./data` | 単一プロセス専用の永続ディレクトリ |
 | `stale_after` | `5m` | 未確認へ移行する無通信時間。最小 10 秒 |
@@ -125,6 +148,7 @@ JSON の未知のキー、不正な期間、重複インターフェース、過
 | 名前 | 用途 |
 | --- | --- |
 | `TUNWATCH_API_TOKEN` | API・Web UI の共有アクセストークン（必須） |
+| `TUNWATCH_NODE_NAME` | 実行ノード名。`node_profiles` 使用時は必須。Kubernetes マニフェストでは自動設定 |
 | `TUNWATCH_DISCORD_WEBHOOK` | Discord の HTTPS Webhook URL（任意） |
 
 例: `"networks": ["192.168.30.0/24"], "active_arp": true`。探索は対象インターフェースに直結し、実際のローカル IPv4 アドレスを送信元にできる範囲に限定します。各 CIDR は /20 以上の prefix length、1 インターフェース合計 4096 宛先までです。ルーターの先、IPv6 全アドレス、任意 TCP ポートを走査しません。IPv6 は受動監視です。

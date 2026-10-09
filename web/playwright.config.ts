@@ -11,6 +11,7 @@ writeFileSync(
     listen: "127.0.0.1:18089",
     data_dir: join(data, "data"),
     demo: true,
+    node_profiles: { "demo-sensor": { interfaces: ["demo0"] } },
     stale_after: "10s",
     offline_after: "25s",
   }),
@@ -32,6 +33,9 @@ export default defineConfig({
     command: `../bin/tunwatch -config ${config}`,
     url: "http://127.0.0.1:18089/healthz",
     reuseExistingServer: false,
-    env: { TUNWATCH_API_TOKEN: "tunwatch-e2e-test-token-not-a-real-secret" },
+    env: {
+      TUNWATCH_NODE_NAME: "demo-sensor",
+      TUNWATCH_API_TOKEN: "tunwatch-e2e-test-token-not-a-real-secret",
+    },
   },
 });

@@ -155,7 +155,7 @@ func run() error {
 		go func() { defer wg.Done(); reverseDNS(ctx, engine, errorsCh) }()
 	}
 	api.Ready.Store(true)
-	slog.Info("tunwatch ready", "listen", c.Listen, "demo", c.Demo, "interfaces", c.Interfaces)
+	slog.Info("tunwatch ready", "listen", c.Listen, "demo", c.Demo, "node", c.NodeName, "interfaces", c.Interfaces)
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
 	checkpoint := time.NewTicker(30 * time.Second)

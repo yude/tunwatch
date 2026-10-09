@@ -41,6 +41,7 @@ test("authenticated live inventory, search, details, history and settings", asyn
   await expect(
     page.getByRole("heading", { name: "状態判定と保存" }),
   ).toBeVisible();
+  await expect(page.getByText("demo-sensor", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "ログアウト", exact: true }).click();
   await expect(page.getByLabel("アクセストークン")).toBeVisible();
 });

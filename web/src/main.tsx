@@ -26,6 +26,7 @@ type Event = {
   device: Device;
 };
 type Status = {
+  node_name: string;
   ready: boolean;
   capacity_rejections: number;
   config: {
@@ -668,6 +669,8 @@ function App() {
                 <section className="panel setting">
                   <h2>監視範囲</h2>
                   <dl>
+                    <dt>実行ノード</dt>
+                    <dd>{status.node_name || "未指定（共通設定）"}</dd>
                     <dt>インターフェース</dt>
                     <dd>{status.config.interfaces?.join(", ") || "demo0"}</dd>
                     <dt>対象ネットワーク</dt>

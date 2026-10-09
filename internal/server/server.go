@@ -64,7 +64,7 @@ func (s *Server) Handler() http.Handler {
 		if s.Stats != nil {
 			stats = s.Stats()
 		}
-		respond(w, map[string]any{"ready": s.Ready.Load(), "device_count": count, "capacity_rejections": rejected, "capture": stats, "config": s.Config})
+		respond(w, map[string]any{"ready": s.Ready.Load(), "node_name": s.Config.NodeName, "device_count": count, "capacity_rejections": rejected, "capture": stats, "config": s.Config})
 	})))
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { http.Error(w, "not found", 404) })
 	sub, _ := fs.Sub(assets, "ui")

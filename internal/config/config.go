@@ -12,7 +12,17 @@ import (
 	"time"
 )
 
+// NodeProfile overrides only the L2 monitoring scope. Omitted networks inherit
+// the common scope; an explicit empty array selects connected networks.
+type NodeProfile struct {
+	Interfaces []string  `json:"interfaces"`
+	Networks   *[]string `json:"networks,omitempty"`
+}
+
 type Config struct {
+	NodeProfiles map[string]NodeProfile `json:"node_profiles,omitempty"`
+	NodeName     string                 `json:"-"`
+
 	Listen        string         `json:"listen"`
 	Interfaces    []string       `json:"interfaces"`
 	Networks      []string       `json:"networks"`
@@ -54,6 +64,9 @@ func Load(path string) (Config, error) {
 	if d.Decode(&extra) != io.EOF {
 		return c, errors.New("config must contain one JSON object")
 	}
+	if err = c.resolveNode(strings.TrimSpace(os.Getenv("TUNWATCH_NODE_NAME"))); err != nil {
+		return c, err
+	}
 	if err = c.Validate(); err != nil {
 		return c, err
 	}
@@ -63,6 +76,47 @@ func Load(path string) (Config, error) {
 		return c, errors.New("TUNWATCH_API_TOKEN must contain at least 24 characters")
 	}
 	return c, nil
+}
+
+func (c *Config) resolveNode(name string) error {
+	c.NodeName = name
+	if c.NodeProfiles == nil {
+		return nil
+	}
+	if len(c.NodeProfiles) == 0 {
+		return errors.New("node_profiles must not be empty")
+	}
+	// Validate every profile so mistakes on standby nodes are caught before a move.
+	for node, profile := range c.NodeProfiles {
+		if strings.TrimSpace(node) != node || node == "" {
+			return errors.New("node_profiles keys must be nonempty node names without surrounding whitespace")
+		}
+		if len(profile.Interfaces) == 0 {
+			return fmt.Errorf("node_profiles[%q]: explicit interfaces are required", node)
+		}
+		candidate := *c
+		candidate.Interfaces = profile.Interfaces
+		if profile.Networks != nil {
+			candidate.Networks = *profile.Networks
+		}
+		if err := candidate.Validate(); err != nil {
+			return fmt.Errorf("node_profiles[%q]: %w", node, err)
+		}
+	}
+	if name == "" {
+		return errors.New("TUNWATCH_NODE_NAME is required when node_profiles is configured")
+	}
+	profile, ok := c.NodeProfiles[name]
+	if !ok {
+		return fmt.Errorf("no node_profiles entry for node %q; refusing to fall back to common interfaces", name)
+	}
+	c.Interfaces = profile.Interfaces
+	if profile.Networks != nil {
+		c.Networks = *profile.Networks
+	}
+	// API consumers get the resolved configuration, not other nodes' settings.
+	c.NodeProfiles = nil
+	return nil
 }
 
 func (c *Config) Validate() error {

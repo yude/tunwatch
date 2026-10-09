@@ -36,12 +36,15 @@ def main():
     with tempfile.TemporaryDirectory(prefix="tunwatch-integration-") as directory:
         path = Path(directory)
         path.chmod(0o755)
-        config = {"listen": "0.0.0.0:8080", "interfaces": ["eth0"], "networks": ["192.0.2.0/29"],
+        config = {"listen": "0.0.0.0:8080", "interfaces": ["must-not-use"],
+                  "node_profiles": {"sensor-a": {"interfaces": ["eth0"]},
+                                    "sensor-b": {"interfaces": ["other-nic.30"]}},
+                  "networks": ["192.0.2.0/29"],
                   "data_dir": "/data", "stale_after": "10s", "offline_after": "25s",
                   "startup_grace": "1s", "scan_interval": "10s", "active_arp": False}
         (path / "config.json").write_text(json.dumps(config))
         env = path / "secrets.env"
-        env.write_text("TUNWATCH_API_TOKEN=" + token + "\n")
+        env.write_text("TUNWATCH_API_TOKEN=" + token + "\nTUNWATCH_NODE_NAME=sensor-a\n")
         env.chmod(0o600)
         try:
             docker("network", "create", "--internal", "--subnet", "192.0.2.0/29", network)
@@ -63,6 +66,15 @@ def main():
                     + 'http://192.0.2.2:8080' + endpoint))
 
             wait_for(lambda: get("/api/v1/status")["ready"])
+            status = get("/api/v1/status")
+            assert status["node_name"] == "sensor-a"
+            assert status["config"]["interfaces"] == ["eth0"]
+            assert "node_profiles" not in status["config"]
+            rejected = subprocess.run(["docker", "run", "--rm", "--network", "none", "--cap-drop", "ALL",
+                "--env-file", str(env), "-e", "TUNWATCH_NODE_NAME=unregistered",
+                "-v", str(path) + ":/etc/tunwatch:ro", image], capture_output=True, text=True)
+            assert rejected.returncode != 0 and "no node_profiles entry" in rejected.stderr
+            print("PASS: node-specific scope is selected; unregistered node fails closed", flush=True)
             proc = docker("run", "--rm", "--network", "none", "--pid", "container:" + sensor,
                           "--cap-drop", "ALL", "alpine:3.23", "cat", "/proc/1/status")
             fields = dict(line.split(":", 1) for line in proc.splitlines() if ":" in line)
