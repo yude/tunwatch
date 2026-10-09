@@ -97,18 +97,6 @@ kubectl -n tunwatch port-forward service/tunwatch 8080:8080
 
 ConfigMap generator により設定変更で Pod が更新されます。Secret の変更は `kubectl -n tunwatch rollout restart deployment/tunwatch` で反映します。本リポジトリの作成・CI は実クラスターへの適用を行いません。
 
-### 旧ノードラベルからの移行
-
-旧版の `tunwatch.io/sensor` を使っている場合、Deployment を更新する前に配置候補ノードへ新しいラベルを追加してください。以下は 1 ノード分の例です。
-
-```sh
-kubectl label node YOUR_SENSOR_NODE tunwatch.yude.github.io/sensor=true --overwrite
-kubectl apply -k manifests/tunwatch
-kubectl -n tunwatch rollout status deployment/tunwatch
-# 更新後、旧ラベルを利用する Deployment が残っていないことを確認して削除
-kubectl label node YOUR_SENSOR_NODE tunwatch.io/sensor-
-```
-
 ### ノードごとに VLAN インターフェース名が異なる場合
 
 マニフェストは [Downward API](https://kubernetes.io/docs/concepts/workloads/pods/downward-api/) の `spec.nodeName` を `TUNWATCH_NODE_NAME` に渡します。tunwatch が対応する設定を起動時に選ぶため、Kubernetes API の参照や追加の RBAC 権限は不要です。
