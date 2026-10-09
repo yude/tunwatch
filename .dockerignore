@@ -1,0 +1,11 @@
+.git
+web/node_modules
+web/test-results
+web/playwright-report
+data*
+bin
+config.json
+.env
+**/secret.yaml
+internal/server/ui
+coverage.out

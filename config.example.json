@@ -1,0 +1,17 @@
+{
+  "listen": "127.0.0.1:8080",
+  "interfaces": ["eth0"],
+  "networks": [],
+  "data_dir": "./data",
+  "stale_after": "5m",
+  "offline_after": "30m",
+  "startup_grace": "30s",
+  "retention_days": 30,
+  "history_max_mb": 128,
+  "max_devices": 4096,
+  "active_arp": false,
+  "scan_interval": "2m",
+  "probe_rate": 10,
+  "reverse_dns": false,
+  "vendor_file": ""
+}
