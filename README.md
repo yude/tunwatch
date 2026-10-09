@@ -84,7 +84,7 @@ kubectl label node YOUR_SENSOR_NODE tunwatch.yude.github.io/sensor=true
 # api-token ファイルには改行なしのランダムな値を用意し、Git に含めない
 kubectl -n tunwatch create secret generic tunwatch \
   --from-file=api-token=/secure/path/api-token
-# 通知を使う場合は同じ Secret に discord-webhook キーも作成する
+# Discord 通知を使う場合は、下記「Discord Webhook の設定」も実施する
 kubectl kustomize manifests/tunwatch
 kubectl apply -k manifests/tunwatch
 kubectl -n tunwatch rollout status deployment/tunwatch
@@ -96,6 +96,31 @@ kubectl -n tunwatch port-forward service/tunwatch 8080:8080
 標準マニフェストは `0.0.0.0:8080` で待ち受けるため、ホストの各アドレスでも認証付き API に到達できます。ホスト側のファイアウォールでアクセス範囲を制限し、リモート利用には TLS 終端を置いてください。hostNetwork の通信が通常の Pod NetworkPolicy だけで遮断されるとは限りません。Ingress は環境依存のため同梱していません。
 
 ConfigMap generator により設定変更で Pod が更新されます。Secret の変更は `kubectl -n tunwatch rollout restart deployment/tunwatch` で反映します。本リポジトリの作成・CI は実クラスターへの適用を行いません。
+
+### Discord Webhook の設定
+
+Discord で作成した Webhook URL を、既存の `tunwatch` Secret に追加します。以下は Bash と Python 3 を使用します。コマンド実行後の入力欄に URL を貼り付けて Enter を押してください。入力内容は画面に表示されず、シェルの履歴にも残りません。
+
+```sh
+python3 -c '
+import getpass, json
+url = getpass.getpass("Discord Webhook URL: ").strip()
+if not url:
+    raise SystemExit("Webhook URL が空です")
+print(json.dumps({"stringData": {"discord-webhook": url}}))
+' | kubectl -n tunwatch patch secret tunwatch --type=merge --patch-file=/dev/stdin
+```
+
+この操作は `discord-webhook` キーだけを追加・更新し、既存の `api-token` を保持します。Secret は先に上記の `create secret` コマンドで作成してください。
+
+すでに tunwatch が稼働している場合、Secret の値を環境変数へ読み込み直すため Pod を再起動します。初回デプロイ前なら、上記の `kubectl apply -k manifests/tunwatch` へ進んでください。
+
+```sh
+kubectl -n tunwatch rollout restart deployment/tunwatch
+kubectl -n tunwatch rollout status deployment/tunwatch
+```
+
+同じ手順で Webhook URL を変更できます。Webhook URL は Git にコミットしないでください。
 
 ### ノードごとに VLAN インターフェース名が異なる場合
 
