@@ -20,7 +20,9 @@ test("authenticated live inventory, search, details, history and settings", asyn
     page.getByRole("button", { name: "atlas-workstation", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".live-pill")).toHaveText("LIVE");
-  expect(await page.evaluate(() => Object.keys(localStorage).length)).toBe(0);
+  expect(
+    await page.evaluate(() => localStorage.getItem("tunwatch.api_token")),
+  ).toBe("tunwatch-e2e-test-token-not-a-real-secret");
   await page.getByLabel("クライアントを検索").fill("home-server");
   await expect(page.locator("tbody tr")).toHaveCount(1);
   await page.getByRole("button", { name: "home-server", exact: true }).click();
@@ -44,6 +46,98 @@ test("authenticated live inventory, search, details, history and settings", asyn
   await expect(page.getByText("demo-sensor", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "ログアウト", exact: true }).click();
   await expect(page.getByLabel("アクセストークン")).toBeVisible();
+  expect(
+    await page.evaluate(() => localStorage.getItem("tunwatch.api_token")),
+  ).toBeNull();
+  await page.reload();
+  await expect(page.getByLabel("アクセストークン")).toBeVisible();
+});
+
+test("saved token restores an expired session and live stream", async ({
+  page,
+  context,
+}) => {
+  await page.goto("/");
+  await page
+    .getByLabel("アクセストークン")
+    .fill("tunwatch-e2e-test-token-not-a-real-secret");
+  await page.getByRole("button", { name: "ダッシュボードを開く" }).click();
+  await expect(page.locator(".live-pill")).toHaveText("LIVE");
+  await context.clearCookies();
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "ネットワークの現在地" }),
+  ).toBeVisible();
+  await expect(page.locator(".live-pill")).toHaveText("LIVE");
+  expect(
+    (await context.cookies()).some((c) => c.name === "tunwatch_session"),
+  ).toBe(true);
+  // Expiry while the page stays open must also renew the cookie.
+  await context.clearCookies();
+  await expect
+    .poll(
+      async () =>
+        (await context.cookies()).some((c) => c.name === "tunwatch_session"),
+      { timeout: 15000 },
+    )
+    .toBe(true);
+  await expect(page.locator(".live-pill")).toHaveText("LIVE");
+});
+
+test("rejected saved credentials are removed", async ({ page }) => {
+  await page.addInitScript(() =>
+    localStorage.setItem("tunwatch.api_token", "invalid-saved-token"),
+  );
+  await page.goto("/");
+  await expect(page.getByLabel("アクセストークン")).toBeVisible();
+  expect(
+    await page.evaluate(() => localStorage.getItem("tunwatch.api_token")),
+  ).toBeNull();
+});
+
+test("transient renewal failures preserve saved credentials", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      "tunwatch.api_token",
+      "tunwatch-e2e-test-token-not-a-real-secret",
+    ),
+  );
+  await page.route("**/api/v1/session", (route) =>
+    route.fulfill({ status: 503, body: "temporarily unavailable" }),
+  );
+  await page.goto("/");
+  await expect(page.getByRole("alert")).toContainText("503");
+  expect(
+    await page.evaluate(() => localStorage.getItem("tunwatch.api_token")),
+  ).toBe("tunwatch-e2e-test-token-not-a-real-secret");
+  await page.unroute("**/api/v1/session");
+  await page.reload();
+  await expect(page.locator(".live-pill")).toHaveText("LIVE");
+});
+
+test("login remains usable when browser storage is disabled", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Storage.prototype.getItem = () => {
+      throw new DOMException("disabled", "SecurityError");
+    };
+    Storage.prototype.setItem = () => {
+      throw new DOMException("disabled", "SecurityError");
+    };
+    Storage.prototype.removeItem = () => {
+      throw new DOMException("disabled", "SecurityError");
+    };
+  });
+  await page.goto("/");
+  await page
+    .getByLabel("アクセストークン")
+    .fill("tunwatch-e2e-test-token-not-a-real-secret");
+  await page.getByRole("button", { name: "ダッシュボードを開く" }).click();
+  await expect(page.locator(".live-pill")).toHaveText("LIVE");
+  await expect(page.getByRole("alert")).toContainText("ブラウザへの保存に失敗");
 });
 
 test("mobile inventory stays within the viewport", async ({ page }) => {

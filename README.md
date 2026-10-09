@@ -72,7 +72,7 @@ Docker での capability 有効化の互換性を確保するため、コンテ�
 [`manifests/tunwatch`](manifests/tunwatch) は、`yudejp/k8s/manifests` のリソース分割、ConfigMap generator、Longhorn PVC、Recreate、プローブ、リソース制限の構成を参考にしています。
 
 1. `config.json` の `node_profiles` に、配置候補の **実際の Node 名**と各ノードの VLAN インターフェース名を設定します。付属の `sensor-a` / `sensor-b` は置き換えが必要な例です。
-2. 同じ監視対象 L2 セグメントへ接続された配置候補ノードに `tunwatch.io/sensor=true` ラベルを付けます。候補は複数指定できますが、稼働する Pod は **1 台**です。複数のセンサーを同じ DB に接続する構成ではありません。
+2. 同じ監視対象 L2 セグメントへ接続された配置候補ノードに `tunwatch.yude.github.io/sensor=true` ラベルを付けます。候補は複数指定できますが、稼働する Pod は **1 台**です。複数のセンサーを同じ DB に接続する構成ではありません。
 3. `pvc.yaml` の StorageClass、リソース制限、待受アドレス・ポートを環境に合わせます。
 4. `kustomization.yaml` のイメージを運用する SHA タグまたは digest に固定します。
 5. Namespace、Secret、マニフェストを用意します。
@@ -80,7 +80,7 @@ Docker での capability 有効化の互換性を確保するため、コンテ�
 ```sh
 kubectl apply -f manifests/tunwatch/namespace.yaml
 # ノード名は実環境で選択
-kubectl label node YOUR_SENSOR_NODE tunwatch.io/sensor=true
+kubectl label node YOUR_SENSOR_NODE tunwatch.yude.github.io/sensor=true
 # api-token ファイルには改行なしのランダムな値を用意し、Git に含めない
 kubectl -n tunwatch create secret generic tunwatch \
   --from-file=api-token=/secure/path/api-token
@@ -96,6 +96,18 @@ kubectl -n tunwatch port-forward service/tunwatch 8080:8080
 標準マニフェストは `0.0.0.0:8080` で待ち受けるため、ホストの各アドレスでも認証付き API に到達できます。ホスト側のファイアウォールでアクセス範囲を制限し、リモート利用には TLS 終端を置いてください。hostNetwork の通信が通常の Pod NetworkPolicy だけで遮断されるとは限りません。Ingress は環境依存のため同梱していません。
 
 ConfigMap generator により設定変更で Pod が更新されます。Secret の変更は `kubectl -n tunwatch rollout restart deployment/tunwatch` で反映します。本リポジトリの作成・CI は実クラスターへの適用を行いません。
+
+### 旧ノードラベルからの移行
+
+旧版の `tunwatch.io/sensor` を使っている場合、Deployment を更新する前に配置候補ノードへ新しいラベルを追加してください。以下は 1 ノード分の例です。
+
+```sh
+kubectl label node YOUR_SENSOR_NODE tunwatch.yude.github.io/sensor=true --overwrite
+kubectl apply -k manifests/tunwatch
+kubectl -n tunwatch rollout status deployment/tunwatch
+# 更新後、旧ラベルを利用する Deployment が残っていないことを確認して削除
+kubectl label node YOUR_SENSOR_NODE tunwatch.io/sensor-
+```
 
 ### ノードごとに VLAN インターフェース名が異なる場合
 
@@ -199,7 +211,7 @@ Discord 通知は必要最小限の **MAC、インターフェース、時刻、
 - 中断した最後の gzip member だけを起動時に切り詰めます。CRC 不一致などの既存履歴破損は黙って消さず、起動エラーにします。
 - 同一ディレクトリの複数プロセスによる書き込みをファイルロックで防ぎます。ローカル / PVC ファイルシステム向けです。外部 DB アダプターは未実装ですが、`monitor.Journal` で保存処理を分離しています。
 - 圧縮履歴は容量超過時に古い segment から削除します。期間の削除単位も segment のため、最大で日付境界程度の幅があります。容量上限に snapshot と vendor CSV は含みません。snapshot は `max_devices` と 1 台当たりのアドレス数で制限します。
-- API は既定で loopback に bind し、CORS を有効にしません。トークンを URL や localStorage に置きません。Web セッションは最長 8 時間、SameSite=Strict、HttpOnly、TLS / HTTPS proxy 接続時は Secure です。トークン変更で全セッションを無効化できます。ログアウトはそのブラウザの cookie を消去します。
+- API は既定で loopback に bind し、CORS を有効にしません。ログインに成功したトークンを、このサイトの localStorage に保存します。次回の訪問時やセッション切れの際は保存トークンで自動ログインします。トークンは URL に含めません。Web セッションは最長 8 時間、SameSite=Strict、HttpOnly、TLS / HTTPS proxy 接続時は Secure です。トークン変更で全セッションを無効化できます。ログアウトは保存トークンとそのブラウザの cookie を消去します。保存トークンが認証で拒否された場合も保存を解除します。通信障害では保存トークンを削除しません。ブラウザでストレージを禁止している場合、ログインはできますが次回の再入力が必要です。
 
 ## API
 

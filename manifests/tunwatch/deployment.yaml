@@ -21,7 +21,7 @@ spec:
       # Eligible nodes must have a node_profiles entry for their host interfaces.
       # A single replica monitors the segment visible from its scheduled node.
       nodeSelector:
-        tunwatch.io/sensor: "true"
+        tunwatch.yude.github.io/sensor: "true"
       terminationGracePeriodSeconds: 20
       securityContext:
         fsGroup: 65532

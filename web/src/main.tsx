@@ -1,3 +1,4 @@
+import { api, forgetToken, rememberToken } from "./api";
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
@@ -146,17 +147,6 @@ function Badge({ status }: { status: string }) {
     </span>
   );
 }
-async function api(path: string, init?: RequestInit) {
-  const r = await fetch("/api/v1/" + path, {
-    signal: AbortSignal.timeout(10000),
-    ...init,
-  });
-  if (!r.ok)
-    throw new Error(
-      r.status === 401 ? "認証が必要です" : `取得に失敗しました (${r.status})`,
-    );
-  return r.status === 204 ? null : r.json();
-}
 function App() {
   const [logged, setLogged] = useState(false),
     [checking, setChecking] = useState(true),
@@ -179,7 +169,9 @@ function App() {
         setStatus(s);
         setLogged(true);
       })
-      .catch(() => {})
+      .catch((e) => {
+        if (e.message !== "認証が必要です") setError(e.message);
+      })
       .finally(() => setChecking(false));
   }, []);
   async function loadEvents(more = false) {
@@ -248,6 +240,10 @@ function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token }),
       });
+      if (!rememberToken(token))
+        setError(
+          "ブラウザへの保存に失敗しました。次回はトークンの再入力が必要です。",
+        );
       setToken("");
       setLogged(true);
     } catch (e) {
@@ -255,7 +251,15 @@ function App() {
     }
   }
   async function logout() {
-    await api("session", { method: "DELETE" });
+    forgetToken();
+    try {
+      await api("session", { method: "DELETE" });
+      setError("");
+    } catch {
+      setError(
+        "保存トークンは削除しましたが、サーバー側のログアウトに失敗しました。接続を確認して再試行してください。",
+      );
+    }
     setLogged(false);
     setDevices([]);
     setEvents([]);
@@ -316,7 +320,9 @@ function App() {
               {error}
             </p>
           )}
-          <small>トークンはブラウザのストレージに保存されません。</small>
+          <small>
+            トークンをこのブラウザに保存し、次回から自動でログインします。
+          </small>
         </form>
       </main>
     );
