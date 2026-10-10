@@ -163,6 +163,8 @@ JSON の未知のキー、不正な期間、重複インターフェース、過
 | `probe_rate` | `2` | インターフェースごとの ARP 送信数 / 秒。1–100 |
 | `mdns_lookup` | `true` | 観測済みの直結 IPv4 を mDNS PTR で名前解決。インターフェースごとに最大 1 件 / 秒、同一 MAC・IP の再試行は 5 分間隔 |
 | `reverse_dns` | `false` | ホスト名未取得端末の逆引き。最大 1 件 / 秒、再試行 1 時間間隔 |
+| `hosts_url` | `""` | GitHub の blob / raw URL。指定すると起動直後と定期的に自動取得 |
+| `hosts_refresh` | `5m` | GitHub hosts の取得周期。1 分〜24 時間 |
 | `hosts_file` | `""` | IP と表示名を照合するローカル hosts ファイル。起動時に読み込み |
 | `vendor_file` | `""` | 内蔵 IEEE データへの追加・同一 prefix の上書きに使う CSV（任意） |
 | `retention_days` | `30` | 履歴・未観測端末の保持期間 |
@@ -211,25 +213,18 @@ MA-M / MA-S も使う場合は [IEEE の公開データ](https://regauth.standar
 
 [CoreDNS の tun.y2e.org.hosts](https://github.com/y2e-org/playbooks/blob/master/svc/coredns/config/tun.y2e.org.hosts) のような `IP 名前 [別名...]` 形式に対応します。行の先頭の名前を採用し、コメントと空行を無視します。重複 IP に異なる名前が指定されている場合は起動時にエラーにします。
 
-Kubernetes で使う場合、ファイルを取得します（非公開リポジトリの場合は参照権限のある `gh` ログインが必要です）。取得に GitHub 認証を使っても、Pod に GitHub トークンを渡す必要はありません。
+GitHub を自動追従する場合は `config.json` に以下を設定してください。ファイルのマウントや ConfigMap への hosts の追加は不要です。同梱の Kubernetes 設定にもこの URL を設定しています。
 
-```sh
-gh api -H "Accept: application/vnd.github.raw+json" \
-  repos/y2e-org/playbooks/contents/svc/coredns/config/tun.y2e.org.hosts \
-  > manifests/tunwatch/tun.y2e.org.hosts
+```json
+"hosts_url": "https://github.com/y2e-org/playbooks/blob/master/svc/coredns/config/tun.y2e.org.hosts",
+"hosts_refresh": "5m"
 ```
 
-`manifests/tunwatch/kustomization.yaml` の既存 `configMapGenerator` にファイルを追加します。
+起動直後と 5 分ごとに公開ファイルを取得し、変更を再起動なしで一覧・API に反映します。GitHub の blob URL は raw URL に変換します。ETag が返る場合は条件付きリクエストを使います。取得・解析エラーでは稼働中の前回データを保持し、次の周期に再試行します。再起動後の初回取得に失敗した場合は、取得できるまでネットワークの観測名を表示します。API と Web UI の「hosts 自動同期」で最終成功時刻・登録数・エラーを確認できます。
 
-```yaml
-configMapGenerator:
-  - name: tunwatch-config
-    files:
-      - config.json
-      - tun.y2e.org.hosts
-```
+HTTPS の `github.com/.../blob/...` と `raw.githubusercontent.com` の公開ファイルだけを許可し、リダイレクトには追従しません。認証トークンは不要で、端末の IP・MAC を GitHub へ送信することもありません。応答は最大 4 MiB、通信は 10 秒でタイムアウトします。デモモードでは自動取得しません。
 
-`config.json` に `"hosts_file": "/etc/tunwatch/tun.y2e.org.hosts"` を設定して、`kubectl apply -k manifests/tunwatch` で反映します。既存の ConfigMap マウントを利用します。ファイルの更新後も同じコマンドで Pod が更新されます。単体実行ではローカルファイルのパスを指定し、変更後に再起動してください。自動ダウンロード・自動追従は行いません。
+ローカルファイルを利用する場合の `hosts_file` も利用できますが、`hosts_url` と同時には指定できません。URL 方式では `hosts_file` を削除するか空文字にしてください。設定の変更には再起動が必要ですが、GitHub 上の hosts の変更は自動反映します。
 
 一覧では設定名を優先し、「hosts ファイル」と表示します。詳細ではファイル名・照合 IP と、DHCP / mDNS / DNS で得たホスト名を分けて確認できます。API は `hosts_name.value` / `hosts_name.source: "hosts_file"` / `hosts_name.detail` に取得元を保持し、既存の `hostname` はネットワークで観測した名前として維持します。
 

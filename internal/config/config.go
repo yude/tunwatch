@@ -23,35 +23,38 @@ type Config struct {
 	NodeProfiles map[string]NodeProfile `json:"node_profiles,omitempty"`
 	NodeName     string                 `json:"-"`
 
-	Listen        string         `json:"listen"`
-	Interfaces    []string       `json:"interfaces"`
-	Networks      []string       `json:"networks"`
-	DataDir       string         `json:"data_dir"`
-	StaleAfter    string         `json:"stale_after"`
-	OfflineAfter  string         `json:"offline_after"`
-	StartupGrace  string         `json:"startup_grace"`
-	RetentionDays int            `json:"retention_days"`
-	HistoryMaxMB  int            `json:"history_max_mb"`
-	MaxDevices    int            `json:"max_devices"`
-	ActiveARP     bool           `json:"active_arp"`
-	ScanInterval  string         `json:"scan_interval"`
-	ProbeRate     int            `json:"probe_rate"`
-	MDNSLookup    bool           `json:"mdns_lookup"`
-	ReverseDNS    bool           `json:"reverse_dns"`
-	HostsFile     string         `json:"hosts_file"`
-	VendorFile    string         `json:"vendor_file"`
-	Demo          bool           `json:"demo"`
-	Stale         time.Duration  `json:"-"`
-	Offline       time.Duration  `json:"-"`
-	Grace         time.Duration  `json:"-"`
-	Scan          time.Duration  `json:"-"`
-	Prefixes      []netip.Prefix `json:"-"`
-	Token         string         `json:"-"`
-	Webhook       string         `json:"-"`
+	Listen               string         `json:"listen"`
+	Interfaces           []string       `json:"interfaces"`
+	Networks             []string       `json:"networks"`
+	DataDir              string         `json:"data_dir"`
+	StaleAfter           string         `json:"stale_after"`
+	OfflineAfter         string         `json:"offline_after"`
+	StartupGrace         string         `json:"startup_grace"`
+	RetentionDays        int            `json:"retention_days"`
+	HistoryMaxMB         int            `json:"history_max_mb"`
+	MaxDevices           int            `json:"max_devices"`
+	ActiveARP            bool           `json:"active_arp"`
+	ScanInterval         string         `json:"scan_interval"`
+	ProbeRate            int            `json:"probe_rate"`
+	MDNSLookup           bool           `json:"mdns_lookup"`
+	ReverseDNS           bool           `json:"reverse_dns"`
+	HostsURL             string         `json:"hosts_url"`
+	HostsRefresh         string         `json:"hosts_refresh"`
+	HostsRefreshDuration time.Duration  `json:"-"`
+	HostsFile            string         `json:"hosts_file"`
+	VendorFile           string         `json:"vendor_file"`
+	Demo                 bool           `json:"demo"`
+	Stale                time.Duration  `json:"-"`
+	Offline              time.Duration  `json:"-"`
+	Grace                time.Duration  `json:"-"`
+	Scan                 time.Duration  `json:"-"`
+	Prefixes             []netip.Prefix `json:"-"`
+	Token                string         `json:"-"`
+	Webhook              string         `json:"-"`
 }
 
 func Load(path string) (Config, error) {
-	c := Config{Listen: "127.0.0.1:8080", DataDir: "./data", StaleAfter: "5m", OfflineAfter: "30m", StartupGrace: "30s", RetentionDays: 30, HistoryMaxMB: 128, MaxDevices: 4096, ScanInterval: "5m", ProbeRate: 2, ActiveARP: true, MDNSLookup: true}
+	c := Config{Listen: "127.0.0.1:8080", DataDir: "./data", StaleAfter: "5m", OfflineAfter: "30m", StartupGrace: "30s", RetentionDays: 30, HistoryMaxMB: 128, MaxDevices: 4096, ScanInterval: "5m", ProbeRate: 2, ActiveARP: true, MDNSLookup: true, HostsRefresh: "5m"}
 	f, err := os.Open(path)
 	if err != nil {
 		return c, err
@@ -126,6 +129,18 @@ func (c *Config) resolveNode(name string) error {
 
 func (c *Config) Validate() error {
 	var err error
+	if c.HostsURL != "" {
+		if c.HostsFile != "" {
+			return errors.New("hosts_url and hosts_file cannot both be set")
+		}
+		if _, err := HostsURL(c.HostsURL); err != nil {
+			return err
+		}
+		c.HostsRefreshDuration, err = time.ParseDuration(c.HostsRefresh)
+		if err != nil || c.HostsRefreshDuration < time.Minute || c.HostsRefreshDuration > 24*time.Hour {
+			return errors.New("hosts_refresh must be between 1m and 24h")
+		}
+	}
 	for _, p := range []struct {
 		s   string
 		dst *time.Duration

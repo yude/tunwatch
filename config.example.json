@@ -14,5 +14,7 @@
   "probe_rate": 2,
   "mdns_lookup": true,
   "reverse_dns": false,
+  "hosts_url": "https://github.com/y2e-org/playbooks/blob/master/svc/coredns/config/tun.y2e.org.hosts",
+  "hosts_refresh": "5m",
   "vendor_file": ""
 }

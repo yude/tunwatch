@@ -75,6 +75,15 @@ func run() error {
 	errorsCh := make(chan error, len(c.Interfaces)+4)
 	engine := monitor.NewEngine(c, journal, vendors, restored, time.Now().UTC())
 	engine.SetHosts(hosts)
+	var hostsSync *monitor.HostsSync
+	if c.HostsURL != "" && !c.Demo {
+		hostsSync, err = monitor.NewHostsSync(c.HostsURL)
+		if err != nil {
+			return err
+		}
+		wg.Add(1)
+		go func() { defer wg.Done(); hostsSync.Run(ctx, engine, c.HostsRefreshDuration) }()
+	}
 	var worker *notify.Worker
 	if c.Webhook != "" && !c.Demo {
 		provider, e := notify.NewDiscord(c.Webhook)
@@ -115,6 +124,9 @@ func run() error {
 			items = append(items, map[string]any{"interface": cap.Name(), "observations": cap.Received.Load(), "queue_dropped": cap.Dropped.Load(), "kernel_dropped": cap.KernelDropped.Load(), "probe_targets": cap.TargetCount(), "arp_sent": cap.ARPSent.Load(), "mdns_sent": cap.MDNSSent.Load()})
 		}
 		stats := map[string]any{"interfaces": items, "version": version, "demo": c.Demo}
+		if hostsSync != nil {
+			stats["hosts_sync"] = hostsSync.Status()
+		}
 		if worker != nil {
 			stats["notifications"] = map[string]uint64{"sent": worker.Sent.Load(), "failed": worker.Failed.Load(), "dropped": worker.Dropped.Load()}
 		}

@@ -180,3 +180,38 @@ test("hosts display name keeps file provenance and observed hostname", async ({
   );
   await expect(page.getByRole("dialog")).toContainText("access-point");
 });
+
+test("GitHub hosts sync status shows source and last success", async ({
+  page,
+}) => {
+  await page.route("**/api/v1/status", async (route) => {
+    const response = await route.fetch();
+    if (!response.ok()) {
+      await route.fulfill({ response });
+      return;
+    }
+    const data = await response.json();
+    data.capture.hosts_sync = {
+      url: "https://github.com/y2e-org/playbooks/blob/master/svc/coredns/config/tun.y2e.org.hosts",
+      entries: 42,
+      last_checked: "2026-10-10T00:00:00Z",
+      last_success: "2026-10-10T00:00:00Z",
+    };
+    await route.fulfill({ response, json: data });
+  });
+  await page.goto("/");
+  await page
+    .getByLabel("アクセストークン")
+    .fill("tunwatch-e2e-test-token-not-a-real-secret");
+  await page.getByRole("button", { name: "ダッシュボードを開く" }).click();
+  await page.getByRole("button", { name: "監視設定", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "hosts 自動同期" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "https://github.com/y2e-org/playbooks/blob/master/svc/coredns/config/tun.y2e.org.hosts",
+    ),
+  ).toBeVisible();
+  await expect(page.getByText("42", { exact: true })).toBeVisible();
+});

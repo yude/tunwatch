@@ -62,6 +62,13 @@ type Status = {
       arp_sent: number;
       mdns_sent: number;
     }[];
+    hosts_sync?: {
+      url: string;
+      last_checked: string;
+      last_success: string;
+      entries: number;
+      error?: string;
+    };
     notifications?: { sent: number; failed: number; dropped: number };
   };
 };
@@ -766,6 +773,33 @@ function App() {
                     破棄が増える場合は監視範囲やリソースを見直してください。
                   </p>
                 </section>
+                {status.capture.hosts_sync && (
+                  <section className="panel setting">
+                    <h2>hosts 自動同期</h2>
+                    <dl>
+                      <dt>取得元</dt>
+                      <dd style={{ overflowWrap: "anywhere" }}>
+                        {status.capture.hosts_sync.url}
+                      </dd>
+                      <dt>登録数</dt>
+                      <dd>{status.capture.hosts_sync.entries}</dd>
+                      <dt>最終成功</dt>
+                      <dd>
+                        {status.capture.hosts_sync.last_success.startsWith(
+                          "0001-",
+                        )
+                          ? "未取得"
+                          : format(status.capture.hosts_sync.last_success)}
+                      </dd>
+                    </dl>
+                    {status.capture.hosts_sync.error && (
+                      <p role="alert" className="error">
+                        {status.capture.hosts_sync.error} ·
+                        前回のデータを保持しています（初回取得前は観測名を使用）。
+                      </p>
+                    )}
+                  </section>
+                )}
                 <section className="panel setting">
                   <h2>Discord 通知</h2>
                   {status.capture.notifications ? (
