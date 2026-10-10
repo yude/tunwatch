@@ -46,6 +46,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	hosts, err := monitor.LoadHosts(c.HostsFile)
+	if err != nil {
+		return err
+	}
 	journal, err := store.Open(c.DataDir, c.RetentionDays, c.HistoryMaxMB)
 	if err != nil {
 		return err
@@ -70,6 +74,7 @@ func run() error {
 	}()
 	errorsCh := make(chan error, len(c.Interfaces)+4)
 	engine := monitor.NewEngine(c, journal, vendors, restored, time.Now().UTC())
+	engine.SetHosts(hosts)
 	var worker *notify.Worker
 	if c.Webhook != "" && !c.Demo {
 		provider, e := notify.NewDiscord(c.Webhook)

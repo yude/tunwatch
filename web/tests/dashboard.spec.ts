@@ -160,3 +160,23 @@ test("mobile inventory stays within the viewport", async ({ page }) => {
     fullPage: true,
   });
 });
+
+test("hosts display name keeps file provenance and observed hostname", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByLabel("アクセストークン")
+    .fill("tunwatch-e2e-test-token-not-a-real-secret");
+  await page.getByRole("button", { name: "ダッシュボードを開く" }).click();
+  await page.getByLabel("クライアントを検索").fill("access-point");
+  await expect(page.locator("tbody tr")).toHaveCount(1);
+  await expect(page.locator("tbody tr")).toContainText("hosts ファイル");
+  await page
+    .getByRole("button", { name: "configured-ap.example", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toContainText(
+    "test.hosts · 192.0.2.15",
+  );
+  await expect(page.getByRole("dialog")).toContainText("access-point");
+});

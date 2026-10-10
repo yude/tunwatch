@@ -163,6 +163,7 @@ JSON の未知のキー、不正な期間、重複インターフェース、過
 | `probe_rate` | `2` | インターフェースごとの ARP 送信数 / 秒。1–100 |
 | `mdns_lookup` | `true` | 観測済みの直結 IPv4 を mDNS PTR で名前解決。インターフェースごとに最大 1 件 / 秒、同一 MAC・IP の再試行は 5 分間隔 |
 | `reverse_dns` | `false` | ホスト名未取得端末の逆引き。最大 1 件 / 秒、再試行 1 時間間隔 |
+| `hosts_file` | `""` | IP と表示名を照合するローカル hosts ファイル。起動時に読み込み |
 | `vendor_file` | `""` | 内蔵 IEEE データへの追加・同一 prefix の上書きに使う CSV（任意） |
 | `retention_days` | `30` | 履歴・未観測端末の保持期間 |
 | `history_max_mb` | `128` | 圧縮イベント履歴の MiB 上限。1–10240 |
@@ -205,6 +206,34 @@ curl --fail --location https://standards-oui.ieee.org/oui/oui.csv --output oui.c
 ```
 
 MA-M / MA-S も使う場合は [IEEE の公開データ](https://regauth.standards.ieee.org/standards-ra-web/pub/view.html#registries)から各 CSV を取得し、ヘッダー行を含めて 1 つのファイルに連結できます。コンテナでは読み取り専用でマウントしてください。データの更新・利用条件は提供元に従ってください。tunwatch は外部の MAC 検索サービスにクライアント情報を送信しません。
+
+### hosts ファイルから表示名を付ける
+
+[CoreDNS の tun.y2e.org.hosts](https://github.com/y2e-org/playbooks/blob/master/svc/coredns/config/tun.y2e.org.hosts) のような `IP 名前 [別名...]` 形式に対応します。行の先頭の名前を採用し、コメントと空行を無視します。重複 IP に異なる名前が指定されている場合は起動時にエラーにします。
+
+Kubernetes で使う場合、ファイルを取得します（非公開リポジトリの場合は参照権限のある `gh` ログインが必要です）。取得に GitHub 認証を使っても、Pod に GitHub トークンを渡す必要はありません。
+
+```sh
+gh api -H "Accept: application/vnd.github.raw+json" \
+  repos/y2e-org/playbooks/contents/svc/coredns/config/tun.y2e.org.hosts \
+  > manifests/tunwatch/tun.y2e.org.hosts
+```
+
+`manifests/tunwatch/kustomization.yaml` の既存 `configMapGenerator` にファイルを追加します。
+
+```yaml
+configMapGenerator:
+  - name: tunwatch-config
+    files:
+      - config.json
+      - tun.y2e.org.hosts
+```
+
+`config.json` に `"hosts_file": "/etc/tunwatch/tun.y2e.org.hosts"` を設定して、`kubectl apply -k manifests/tunwatch` で反映します。既存の ConfigMap マウントを利用します。ファイルの更新後も同じコマンドで Pod が更新されます。単体実行ではローカルファイルのパスを指定し、変更後に再起動してください。自動ダウンロード・自動追従は行いません。
+
+一覧では設定名を優先し、「hosts ファイル」と表示します。詳細ではファイル名・照合 IP と、DHCP / mDNS / DNS で得たホスト名を分けて確認できます。API は `hosts_name.value` / `hosts_name.source: "hosts_file"` / `hosts_name.detail` に取得元を保持し、既存の `hostname` はネットワークで観測した名前として維持します。
+
+照合対象は実際に観測した IP の一覧です。hosts の記載だけで端末を作成したりオンラインにしたりしません。過去の観測 IP も含むため、IP の再割り当て後の機器の真正性を保証するものではありません。同じ端末の複数 IP に異なる設定名が見つかった場合は、曖昧な名前を選ばず観測名に戻します。ファイルが未設定・該当なしの場合も観測名を表示します。
 
 ## 状態と通知
 

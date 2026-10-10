@@ -5,12 +5,15 @@ import { join } from "node:path";
 
 const data = mkdtempSync(join(tmpdir(), "tunwatch-e2e-"));
 const config = join(data, "config.json");
+const hosts = join(data, "test.hosts");
+writeFileSync(hosts, "192.0.2.15 configured-ap.example\n");
 writeFileSync(
   config,
   JSON.stringify({
     listen: "127.0.0.1:18089",
     data_dir: join(data, "data"),
     demo: true,
+    hosts_file: hosts,
     node_profiles: { "demo-sensor": { interfaces: ["demo0"] } },
     stale_after: "10s",
     offline_after: "25s",

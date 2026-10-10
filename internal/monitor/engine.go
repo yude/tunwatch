@@ -24,6 +24,7 @@ type Engine struct {
 	observed map[string]bool
 	updates  map[string]time.Time
 	journal  Journal
+	hosts    Hosts
 	vendors  Vendors
 	started  time.Time
 	sequence int64
@@ -103,6 +104,10 @@ func (e *Engine) Observe(o model.Observation) error {
 			d.OS = h
 			changed = true
 		}
+	}
+	if h := e.hosts.Lookup(d.IPs); h != d.HostsName {
+		d.HostsName = h
+		changed = true
 	}
 	typ, reason := "", ""
 	if !exists || old.Status != "online" {

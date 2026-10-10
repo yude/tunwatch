@@ -70,3 +70,5 @@ data: {"time":"2026-10-09T12:01:00Z","ready":true,"devices":[...]}
 エラー本文は短い plain text です。API は読み取り中心で、設定や任意コマンド実行の endpoint はありません。
 
 `GET /api/v1/status` の `capture.interfaces[]` には `probe_targets`（ARP 探索対象数）、`arp_sent` / `mdns_sent`（起動後の送信数）を含めます。送信上限と周期は `config.probe_rate` / `config.scan_interval`、mDNS の有効・無効は `config.mdns_lookup` で確認できます。
+
+`devices[].hosts_name` は任意の hosts ファイル照合による表示名です。`value`、`source: "hosts_file"`、`confidence: "configured"`、`detail`（ファイル名と照合 IP）を含みます。該当なし・曖昧な照合では値が空です。`hostname` は従来どおりネットワークで取得した名前を保持します。イベントにも両方の名前を記録します。

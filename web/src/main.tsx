@@ -3,7 +3,12 @@ import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
 
-type Hint = { value: string; source: string; confidence: string };
+type Hint = {
+  detail?: string;
+  value: string;
+  source: string;
+  confidence: string;
+};
 type Device = {
   id: string;
   interface: string;
@@ -11,6 +16,7 @@ type Device = {
   mac: string;
   ips: string[];
   hostname: Hint;
+  hosts_name?: Hint;
   vendor?: string;
   os: Hint;
   local_mac: boolean;
@@ -278,7 +284,14 @@ function App() {
   const filtered = devices.filter(
     (d) =>
       (filter === "all" || d.status === filter) &&
-      [d.hostname.value, d.mac, d.vendor, ...d.ips, d.interface]
+      [
+        d.hosts_name?.value,
+        d.hostname.value,
+        d.mac,
+        d.vendor,
+        ...d.ips,
+        d.interface,
+      ]
         .join(" ")
         .toLowerCase()
         .includes(query.toLowerCase()),
@@ -536,7 +549,9 @@ function App() {
                               <span className="device-icon">
                                 <Icon
                                   name={
-                                    d.hostname.value.includes("server")
+                                    (
+                                      d.hosts_name?.value || d.hostname.value
+                                    ).includes("server")
                                       ? "network"
                                       : "devices"
                                   }
@@ -547,9 +562,16 @@ function App() {
                                   className="device-link"
                                   onClick={() => setSelected(d)}
                                 >
-                                  {d.hostname.value || "名前未取得の端末"}
+                                  {d.hosts_name?.value ||
+                                    d.hostname.value ||
+                                    "名前未取得の端末"}
                                 </button>
                                 <small>
+                                  {d.hosts_name?.value && (
+                                    <span title={d.hosts_name.detail}>
+                                      hosts ファイル ·{" "}
+                                    </span>
+                                  )}
                                   {d.vendor ||
                                     (d.local_mac
                                       ? "ローカル管理 MAC"
@@ -642,7 +664,9 @@ function App() {
                           )
                         }
                       >
-                        {e.device.hostname.value || e.device.mac}
+                        {e.device.hosts_name?.value ||
+                          e.device.hostname.value ||
+                          e.device.mac}
                       </button>
                       <span>{labels[e.type] || e.type}</span>
                       <small className="mono">
@@ -689,9 +713,7 @@ function App() {
                         "インターフェースの直結ネットワーク"}
                     </dd>
                     <dt>アクティブ ARP 探索</dt>
-                    <dd>
-                      {status.config.active_arp ? "有効" : "無効"}
-                    </dd>
+                    <dd>{status.config.active_arp ? "有効" : "無効"}</dd>
                     <dt>ARP 探索周期 / 送信上限</dt>
                     <dd>
                       {status.config.scan_interval} / {status.config.probe_rate}{" "}
@@ -798,7 +820,11 @@ function App() {
               <Icon name="close" />
             </button>
             <div className="eyebrow">DEVICE DETAILS</div>
-            <h2>{selected.hostname.value || "名前未取得の端末"}</h2>
+            <h2>
+              {selected.hosts_name?.value ||
+                selected.hostname.value ||
+                "名前未取得の端末"}
+            </h2>
             <Badge status={selected.status} />
             <dl>
               <dt>MAC アドレス</dt>
@@ -826,7 +852,15 @@ function App() {
                   </small>
                 )}
               </dd>
-              <dt>ホスト名の根拠</dt>
+              {selected.hosts_name?.value && (
+                <>
+                  <dt>表示名の取得元</dt>
+                  <dd>hosts ファイル: {selected.hosts_name.detail}</dd>
+                  <dt>ネットワークで観測したホスト名</dt>
+                  <dd>{selected.hostname.value || "未取得"}</dd>
+                </>
+              )}
+              <dt>観測ホスト名の根拠</dt>
               <dd>{selected.hostname.source || "未取得"}</dd>
               <dt>検出方式</dt>
               <dd>{selected.sources.join(" · ")}</dd>

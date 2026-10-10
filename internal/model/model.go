@@ -3,6 +3,7 @@ package model
 import "time"
 
 type Hint struct {
+	Detail     string `json:"detail,omitempty"`
 	Value      string `json:"value"`
 	Source     string `json:"source"`
 	Confidence string `json:"confidence"`
@@ -13,6 +14,7 @@ type Device struct {
 	VLAN      string    `json:"vlan,omitempty"`
 	MAC       string    `json:"mac"`
 	IPs       []string  `json:"ips"`
+	HostsName Hint      `json:"hosts_name"`
 	Hostname  Hint      `json:"hostname"`
 	Vendor    string    `json:"vendor,omitempty"`
 	OS        Hint      `json:"os"`

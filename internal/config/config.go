@@ -38,6 +38,7 @@ type Config struct {
 	ProbeRate     int            `json:"probe_rate"`
 	MDNSLookup    bool           `json:"mdns_lookup"`
 	ReverseDNS    bool           `json:"reverse_dns"`
+	HostsFile     string         `json:"hosts_file"`
 	VendorFile    string         `json:"vendor_file"`
 	Demo          bool           `json:"demo"`
 	Stale         time.Duration  `json:"-"`

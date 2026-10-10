@@ -9,3 +9,6 @@
 !/internal/server/ui/.gitkeep
 /manifests/**/secret.yaml
 /coverage.out
+
+# Locally supplied network inventory; never publish with the application.
+manifests/tunwatch/*.hosts
