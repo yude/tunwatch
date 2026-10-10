@@ -3,12 +3,13 @@ package monitor
 import (
 	"bufio"
 	"fmt"
-	"github.com/yude/tunwatch/internal/model"
 	"io"
 	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/yude/tunwatch/internal/model"
 )
 
 type Hosts struct {
@@ -67,24 +68,50 @@ func parseHosts(r io.Reader, h Hosts) (Hosts, error) {
 }
 
 // A file-based display name is separate from names observed on the wire.
-// Conflicting assignments across recorded IPs are left unresolved.
+// A unique gateway name wins when a device has multiple IPv4 addresses.
+// Other conflicting assignments across recorded IPs are left unresolved.
 func (h Hosts) Lookup(ips []string) model.Hint {
 	result := model.Hint{}
+	gateway := model.Hint{}
+	conflicting, conflictingGateways := false, false
+	ipv4 := make(map[string]struct{})
 	for _, raw := range ips {
 		ip, err := netip.ParseAddr(raw)
 		if err != nil {
 			continue
 		}
-		name := h.Names[ip.Unmap().String()]
+		ip = ip.Unmap()
+		if ip.Is4() {
+			ipv4[ip.String()] = struct{}{}
+		}
+		name := h.Names[ip.String()]
 		if name == "" {
 			continue
 		}
+		hint := model.Hint{Value: name, Source: "hosts_file", Confidence: "configured", Detail: h.File + " · " + ip.String()}
 		if result.Value != "" && !strings.EqualFold(result.Value, name) {
-			return model.Hint{}
+			conflicting = true
 		}
 		if result.Value == "" {
-			result = model.Hint{Value: name, Source: "hosts_file", Confidence: "configured", Detail: h.File + " · " + ip.Unmap().String()}
+			result = hint
 		}
+		if ip.Is4() && strings.Contains(strings.ToLower(name), "gw") {
+			if gateway.Value != "" && !strings.EqualFold(gateway.Value, name) {
+				conflictingGateways = true
+			}
+			if gateway.Value == "" {
+				gateway = hint
+			}
+		}
+	}
+	if len(ipv4) >= 2 && gateway.Value != "" {
+		if conflictingGateways {
+			return model.Hint{}
+		}
+		return gateway
+	}
+	if conflicting {
+		return model.Hint{}
 	}
 	return result
 }

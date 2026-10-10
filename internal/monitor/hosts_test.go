@@ -1,10 +1,11 @@
 package monitor
 
 import (
-	"github.com/yude/tunwatch/internal/model"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/yude/tunwatch/internal/model"
 )
 
 func TestHostsParsingAndAmbiguity(t *testing.T) {
@@ -23,6 +24,63 @@ func TestHostsParsingAndAmbiguity(t *testing.T) {
 		if _, err := parseHosts(strings.NewReader(input), Hosts{Names: map[string]string{}}); err == nil {
 			t.Fatalf("accepted %q", input)
 		}
+	}
+}
+
+func TestHostsGatewayRepresentative(t *testing.T) {
+	h := Hosts{Names: map[string]string{
+		"192.0.2.10":  "printer.example",
+		"192.0.2.11":  "EdgeGW.example",
+		"192.0.2.12":  "othergw.example",
+		"192.0.2.13":  "edgegw.example",
+		"192.0.2.14":  "camera.example",
+		"2001:db8::1": "ipv6gw.example",
+	}, File: "tun.hosts"}
+	for _, tc := range []struct {
+		name string
+		ips  []string
+		want string
+	}{
+		{"gateway after other name", []string{"192.0.2.10", "192.0.2.11"}, "EdgeGW.example"},
+		{"gateway before other name", []string{"192.0.2.11", "192.0.2.10"}, "EdgeGW.example"},
+		{"same gateway on multiple IPs", []string{"192.0.2.11", "192.0.2.13", "192.0.2.10"}, "EdgeGW.example"},
+		{"distinct gateway names", []string{"192.0.2.11", "192.0.2.12"}, ""},
+		{"IPv6 gateway does not win", []string{"192.0.2.10", "192.0.2.14", "2001:db8::1"}, ""},
+		{"one IPv4 is insufficient", []string{"192.0.2.10", "2001:db8::1"}, ""},
+		{"duplicate IPv4 is insufficient", []string{"192.0.2.10", "192.0.2.10", "2001:db8::1"}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := h.Lookup(tc.ips)
+			if got.Value != tc.want {
+				t.Fatalf("Lookup(%v) = %+v, want %q", tc.ips, got, tc.want)
+			}
+			if tc.want != "" && got.Source != "hosts_file" {
+				t.Fatalf("lost source: %+v", got)
+			}
+		})
+	}
+	got := h.Lookup([]string{"192.0.2.10", "192.0.2.11"})
+	if got.Detail != "tun.hosts · 192.0.2.11" {
+		t.Fatalf("wrong representative IP: %+v", got)
+	}
+}
+
+func TestHostsGatewayRepresentativeAfterSecondObservation(t *testing.T) {
+	_, _, e, now := testEngine()
+	e.SetHosts(Hosts{Names: map[string]string{
+		"192.0.2.10": "device.example",
+		"192.0.2.11": "site-gw.example",
+	}, File: "tun.hosts"})
+	for _, ip := range []string{"192.0.2.10", "192.0.2.11"} {
+		o := observation(now)
+		o.IP = ip
+		if err := e.Observe(o); err != nil {
+			t.Fatal(err)
+		}
+	}
+	devices := e.Devices()
+	if len(devices) != 1 || devices[0].HostsName.Value != "site-gw.example" {
+		t.Fatalf("gateway was not selected after second IP: %+v", devices)
 	}
 }
 func TestHostsEnrichmentDoesNotCreatePresenceOrReplaceObservedName(t *testing.T) {
