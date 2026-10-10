@@ -255,7 +255,7 @@ func demo(ctx context.Context, out chan<- model.Observation) {
 	defer tick.Stop()
 	cycle := 0
 	for {
-		for i, host := range []string{"atlas-workstation", "living-room-tv", "home-server", "pixel-phone", "studio-speaker", "access-point"} {
+		for i, host := range []string{"atlas-workstation", "living-room-tv", "home-server", "pixel-phone", "studio-speaker", "access-point", ""} {
 			if i == 3 && cycle%20 > 9 {
 				continue
 			}

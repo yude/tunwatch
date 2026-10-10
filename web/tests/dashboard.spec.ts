@@ -161,6 +161,31 @@ test("mobile inventory stays within the viewport", async ({ page }) => {
   });
 });
 
+test("unnamed clients filter combines with status and search", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByLabel("アクセストークン")
+    .fill("tunwatch-e2e-test-token-not-a-real-secret");
+  await page.getByRole("button", { name: "ダッシュボードを開く" }).click();
+  const unnamed = page.getByRole("button", { name: "名称不明のみ 1" });
+  await expect(unnamed).toBeVisible();
+  await unnamed.click();
+  await expect(unnamed).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("tbody tr")).toHaveCount(1);
+  await expect(page.locator("tbody tr")).toContainText("名前未取得の端末");
+  await page.locator(".filters").getByRole("button", { name: "観測中" }).click();
+  await expect(page.locator("tbody tr")).toHaveCount(1);
+  await page.getByLabel("クライアントを検索").fill("atlas");
+  await expect(page.locator("tbody tr")).toHaveCount(0);
+  await expect(page.getByText("条件に一致する端末がありません")).toBeVisible();
+  await page.getByLabel("クライアントを検索").fill("");
+  await unnamed.click();
+  await expect(unnamed).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator("tbody tr")).toHaveCount(7);
+});
+
 test("hosts display name keeps file provenance and observed hostname", async ({
   page,
 }) => {

@@ -25,6 +25,8 @@ type Device = {
   last_seen: string;
   sources: string[];
 };
+const deviceName = (d: Device) =>
+  d.hosts_name?.value?.trim() || d.hostname.value.trim();
 type Event = {
   id: string;
   time: string;
@@ -178,6 +180,7 @@ function App() {
     [page, setPage] = useState("devices"),
     [query, setQuery] = useState(""),
     [filter, setFilter] = useState("all"),
+    [unnamedOnly, setUnnamedOnly] = useState(false),
     [selected, setSelected] = useState<Device | null>(null),
     [loading, setLoading] = useState(false);
   useEffect(() => {
@@ -288,9 +291,11 @@ function App() {
     (a, d) => ({ ...a, [d.status]: (a[d.status] || 0) + 1 }),
     {} as Record<string, number>,
   );
+  const unnamedCount = devices.filter((d) => !deviceName(d)).length;
   const filtered = devices.filter(
     (d) =>
       (filter === "all" || d.status === filter) &&
+      (!unnamedOnly || !deviceName(d)) &&
       [
         d.hosts_name?.value,
         d.hostname.value,
@@ -535,6 +540,13 @@ function App() {
                       {id === "all" && <span>{devices.length}</span>}
                     </button>
                   ))}
+                  <button
+                    className={"unnamed-filter " + (unnamedOnly ? "active" : "")}
+                    aria-pressed={unnamedOnly}
+                    onClick={() => setUnnamedOnly((current) => !current)}
+                  >
+                    名称不明のみ <span>{unnamedCount}</span>
+                  </button>
                 </div>
                 <div className="table-wrap">
                   <table>
@@ -556,9 +568,7 @@ function App() {
                               <span className="device-icon">
                                 <Icon
                                   name={
-                                    (
-                                      d.hosts_name?.value || d.hostname.value
-                                    ).includes("server")
+                                    deviceName(d).includes("server")
                                       ? "network"
                                       : "devices"
                                   }
@@ -569,9 +579,7 @@ function App() {
                                   className="device-link"
                                   onClick={() => setSelected(d)}
                                 >
-                                  {d.hosts_name?.value ||
-                                    d.hostname.value ||
-                                    "名前未取得の端末"}
+                                  {deviceName(d) || "名前未取得の端末"}
                                 </button>
                                 <small>
                                   {d.hosts_name?.value && (
@@ -620,12 +628,14 @@ function App() {
                     <div className="empty">
                       <Icon name="network" size={32} />
                       <h3>
-                        {query
-                          ? "一致する端末がありません"
+                        {query || filter !== "all" || unnamedOnly
+                          ? "条件に一致する端末がありません"
                           : "まだ端末は観測されていません"}
                       </h3>
                       <p>
-                        監視範囲とインターフェースを確認し、通信の受信をお待ちください。
+                        {query || filter !== "all" || unnamedOnly
+                          ? "検索語やフィルタを変更してください。"
+                          : "監視範囲とインターフェースを確認し、通信の受信をお待ちください。"}
                       </p>
                     </div>
                   )}
@@ -671,9 +681,7 @@ function App() {
                           )
                         }
                       >
-                        {e.device.hosts_name?.value ||
-                          e.device.hostname.value ||
-                          e.device.mac}
+                        {deviceName(e.device) || e.device.mac}
                       </button>
                       <span>{labels[e.type] || e.type}</span>
                       <small className="mono">
@@ -855,9 +863,7 @@ function App() {
             </button>
             <div className="eyebrow">DEVICE DETAILS</div>
             <h2>
-              {selected.hosts_name?.value ||
-                selected.hostname.value ||
-                "名前未取得の端末"}
+              {deviceName(selected) || "名前未取得の端末"}
             </h2>
             <Badge status={selected.status} />
             <dl>

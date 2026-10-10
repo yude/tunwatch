@@ -417,6 +417,9 @@ nav button:hover {
   color: #73debd;
   border-bottom-color: #73debd;
 }
+.filters .unnamed-filter {
+  margin-left: auto;
+}
 .filters button span {
   padding: 2px 5px;
   background: #273740;

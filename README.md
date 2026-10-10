@@ -11,7 +11,7 @@ Go の単一バイナリに React / Tailwind CSS の UI を同梱しています
 - ARP、IPv4 / IPv6 の送信元、IPv6 Neighbor Discovery、DHCP、mDNS の受動観測
 - 直結 IPv4 範囲に対する低頻度の ARP 探索（既定で有効、無効化可能）
 - インターフェース・VLAN・MAC ごとの端末管理、IP、ホスト名、ベンダー、OS の推定根拠の表示
-- SSE による 2 秒間隔の更新、検索、端末詳細、接続履歴、設定・センサー状態の確認
+- SSE による 2 秒間隔の更新、検索、名称不明の端末のみの表示、端末詳細、接続履歴、設定・センサー状態の確認
 - 新規観測・再接続・オフライン推定の Discord Webhook 通知
 - 状態変化を中心とした gzip 圧縮履歴、圧縮スナップショット、保存期間・容量制限
 - Bearer token 認証付きの JSON API と、HttpOnly cookie を使う Web UI
