@@ -71,6 +71,6 @@ data: {"time":"2026-10-09T12:01:00Z","ready":true,"devices":[...]}
 
 `GET /api/v1/status` の `capture.interfaces[]` には `probe_targets`（ARP 探索対象数）、`arp_sent` / `mdns_sent`（起動後の送信数）を含めます。送信上限と周期は `config.probe_rate` / `config.scan_interval`、mDNS の有効・無効は `config.mdns_lookup` で確認できます。
 
-`devices[].hosts_name` は任意の hosts ファイル照合による表示名です。`value`、`source: "hosts_file"`、`confidence: "configured"`、`detail`（ファイル名と照合 IP）を含みます。同じ MAC に複数の IPv4 アドレスがあり、`gw` を含む hosts 名が一意に決まる場合はその名前を優先します（大文字・小文字は区別しません）。該当なし・曖昧な照合では値が空です。`hostname` は従来どおりネットワークで取得した名前を保持します。イベントにも両方の名前を記録します。
+`devices[].hosts_name` は任意の hosts ファイル照合による表示名です。`value`、`source: "hosts_file"`、`confidence: "configured"`、`detail`（ファイル名と照合 IP）を含みます。同じ MAC に複数の IPv4 アドレスがある場合、まず `gw` を含む hosts 名を優先します（大文字・小文字は区別しません）。同じ優先順位の候補が複数ある場合は数値上もっとも若い名前付き IPv4 アドレスの名前を採用します。該当なし、または複数 IPv4 による優先順位を適用できない曖昧な照合では値が空です。`hostname` は従来どおりネットワークで取得した名前を保持します。イベントにも両方の名前を記録します。
 
 GitHub 自動取得時は `capture.hosts_sync` に `url`、`entries`、`last_checked`、`last_success`、`error` を返します。取得失敗時も稼働中の直前の照合を保持します。`hosts_name.source` は引き続き `hosts_file`、`detail` には取得元 URL と照合 IP を記録します。

@@ -68,12 +68,14 @@ func parseHosts(r io.Reader, h Hosts) (Hosts, error) {
 }
 
 // A file-based display name is separate from names observed on the wire.
-// A unique gateway name wins when a device has multiple IPv4 addresses.
-// Other conflicting assignments across recorded IPs are left unresolved.
+// Gateway names win for devices with multiple IPv4 addresses. Within each
+// priority, the lowest named IPv4 address determines the display name.
 func (h Hosts) Lookup(ips []string) model.Hint {
 	result := model.Hint{}
 	gateway := model.Hint{}
-	conflicting, conflictingGateways := false, false
+	lowest := model.Hint{}
+	var gatewayIP, lowestIP netip.Addr
+	conflicting := false
 	ipv4 := make(map[string]struct{})
 	for _, raw := range ips {
 		ip, err := netip.ParseAddr(raw)
@@ -95,22 +97,22 @@ func (h Hosts) Lookup(ips []string) model.Hint {
 		if result.Value == "" {
 			result = hint
 		}
+		if ip.Is4() && (!lowestIP.IsValid() || ip.Less(lowestIP)) {
+			lowest, lowestIP = hint, ip
+		}
 		if ip.Is4() && strings.Contains(strings.ToLower(name), "gw") {
-			if gateway.Value != "" && !strings.EqualFold(gateway.Value, name) {
-				conflictingGateways = true
-			}
-			if gateway.Value == "" {
-				gateway = hint
+			if !gatewayIP.IsValid() || ip.Less(gatewayIP) {
+				gateway, gatewayIP = hint, ip
 			}
 		}
 	}
 	if len(ipv4) >= 2 && gateway.Value != "" {
-		if conflictingGateways {
-			return model.Hint{}
-		}
 		return gateway
 	}
 	if conflicting {
+		if len(ipv4) >= 2 && lowest.Value != "" {
+			return lowest
+		}
 		return model.Hint{}
 	}
 	return result
