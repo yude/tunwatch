@@ -9,7 +9,7 @@ Go の単一バイナリに React / Tailwind CSS の UI を同梱しています
 ## できること
 
 - ARP、IPv4 / IPv6 の送信元、IPv6 Neighbor Discovery、DHCP、mDNS の受動観測
-- 明示した直結 IPv4 範囲に対する、送信レートを制限した ARP 探索（任意）
+- 直結 IPv4 範囲に対する低頻度の ARP 探索（既定で有効、無効化可能）
 - インターフェース・VLAN・MAC ごとの端末管理、IP、ホスト名、ベンダー、OS の推定根拠の表示
 - SSE による 2 秒間隔の更新、検索、端末詳細、接続履歴、設定・センサー状態の確認
 - 新規観測・再接続・オフライン推定の Discord Webhook 通知
@@ -136,7 +136,7 @@ kubectl -n tunwatch rollout status deployment/tunwatch
 }
 ```
 
-これは設定の抜粋です。Pod が `sensor-b` に配置されると `enp3s0.30` / `enp3s0.40` を監視します。各 profile に `networks` を指定すると共通 CIDR を置き換え、省略すると継承します。`"networks": []` は直結ネットワークの自動選択に戻します（`active_arp: true` では許可しません）。Web UI の監視設定と `/api/v1/status` に、選択されたノード名・実際のインターフェース・CIDR を表示します。
+これは設定の抜粋です。Pod が `sensor-b` に配置されると `enp3s0.30` / `enp3s0.40` を監視します。各 profile に `networks` を指定すると共通 CIDR を置き換え、省略すると継承します。`"networks": []` は直結ネットワークの自動選択に戻します。Web UI の監視設定と `/api/v1/status` に、選択されたノード名・実際のインターフェース・CIDR を表示します。
 
 `node_profiles` を使用する場合、ノード名未指定・未登録ノード・空のインターフェース一覧では起動しません。共通 `interfaces` へ暗黙にフォールバックしないため、別の VLAN を誤って監視することを防ぎます。待機ノードの profile も起動時に検証します。`node_profiles` を省略すれば従来の共通 `interfaces` 設定を引き続き使えます。
 
@@ -158,11 +158,12 @@ JSON の未知のキー、不正な期間、重複インターフェース、過
 | `stale_after` | `5m` | 未確認へ移行する無通信時間。最小 10 秒 |
 | `offline_after` | `30m` | オフライン推定へ移行。`stale_after` より長くする |
 | `startup_grace` | `30s` | 起動直後の通知抑止期間 |
-| `active_arp` | `false` | 直結 IPv4 の能動探索。明示した `networks` が必須 |
-| `scan_interval` | `2m` | 探索周期。最小 10 秒 |
-| `probe_rate` | `10` | インターフェースごとの ARP 送信数 / 秒。1–100 |
+| `active_arp` | `true` | 低頻度の ARP 探索。`networks` が空なら監視インターフェースの直結 IPv4 範囲を使用 |
+| `scan_interval` | `5m` | 探索周期。最小 10 秒、`offline_after` 未満 |
+| `probe_rate` | `2` | インターフェースごとの ARP 送信数 / 秒。1–100 |
+| `mdns_lookup` | `true` | 観測済みの直結 IPv4 を mDNS PTR で名前解決。インターフェースごとに最大 1 件 / 秒、同一 MAC・IP の再試行は 5 分間隔 |
 | `reverse_dns` | `false` | ホスト名未取得端末の逆引き。最大 1 件 / 秒、再試行 1 時間間隔 |
-| `vendor_file` | `""` | IEEE CSV または `prefix,vendor` CSV のローカルファイル |
+| `vendor_file` | `""` | 内蔵 IEEE データへの追加・同一 prefix の上書きに使う CSV（任意） |
 | `retention_days` | `30` | 履歴・未観測端末の保持期間 |
 | `history_max_mb` | `128` | 圧縮イベント履歴の MiB 上限。1–10240 |
 | `max_devices` | `4096` | メモリ内の端末数上限。1–100000 |
@@ -176,19 +177,27 @@ JSON の未知のキー、不正な期間、重複インターフェース、過
 | `TUNWATCH_NODE_NAME` | 実行ノード名。`node_profiles` 使用時は必須。Kubernetes マニフェストでは自動設定 |
 | `TUNWATCH_DISCORD_WEBHOOK` | Discord の HTTPS Webhook URL（任意） |
 
-例: `"networks": ["192.168.30.0/24"], "active_arp": true`。探索は対象インターフェースに直結し、実際のローカル IPv4 アドレスを送信元にできる範囲に限定します。各 CIDR は /20 以上の prefix length、1 インターフェース合計 4096 宛先までです。ルーターの先、IPv6 全アドレス、任意 TCP ポートを走査しません。IPv6 は受動監視です。
+受動監視に、`arp-scan` と同様の ARP 要求・応答を使う能動探索を組み合わせます。外部コマンドは不要です。既定では最大 **2 要求 / 秒 / インターフェース**で、**5 分ごと**に一巡します。/24 でセンサーの IPv4 が 1 個なら最大 253 要求、一巡に約 127 秒、5 分平均で約 0.84 要求 / 秒です。mDNS は別枠で最大 1 問い合わせ / 秒です。
+
+例: `"networks": ["192.168.30.0/24"], "active_arp": true, "probe_rate": 2, "scan_interval": "5m"`。探索は対象インターフェースに直結し、実際のローカル IPv4 アドレスを送信元にできる範囲に限定します。各 CIDR は /20 以上の prefix length、1 インターフェース合計 4096 宛先までです。複数のネットワークは重複排除し、センサー自身の全アドレス・通常のネットワーク / broadcast アドレスを除外します。一巡が指定周期内に収まらない設定や /20 より広い範囲は起動時に拒否します。範囲を狭めるか周期を調整してください。ルーターの先、IPv6 全アドレス、任意 TCP ポートを走査しません。IPv6 は受動監視です。
 
 `networks` を明示すると IP 未確定の DHCP は対象範囲を証明できないため除外します。空の場合は同じインターフェースで観測した DHCP を MAC のみでも表示します。初期 IP 取得時のホスト名を重視する場合は、この違いに注意してください。
 
 ## 端末情報の取得
 
 - **MAC / IP**: パケットの送信元を採用します。ARP の問い合わせ先だけではオンラインにしません。IP の一覧は過去に観測したアドレスを最大 32 件保持し、現在のリースを保証しません。
-- **ホスト名**: DHCP option 12、mDNS の送信元 IP と一致する A / AAAA レコード、任意の DNS PTR。DNS PTR は外部へアドレスを問い合わせる可能性があるため既定で無効です。mDNS の TXT / サービス一覧は保存しません。
-- **ベンダー**: ローカル CSV を longest-prefix match（MA-S / MA-M / MA-L）で照合します。ローカル管理・ランダム MAC はベンダーを断定しません。
+- **ホスト名**: DHCP option 12 / 81（FQDN）、mDNS の送信元 IP と一致する A / AAAA / 逆引き PTR レコード、任意の DNS PTR。DNS PTR は外部へアドレスを問い合わせる可能性があるため既定で無効です。mDNS の TXT / サービス一覧は保存しません。
+- **ベンダー**: 内蔵 IEEE データを longest-prefix match（MA-S / MA-M / MA-L）で照合します。設定なしで利用でき、既存端末も再起動時に再判定します。ローカル管理・ランダム MAC はベンダーを断定しません。
 - **OS**: DHCP vendor class の既知パターン、IPv4 TTL / IPv6 hop limit からの低確度のヒント。確度と根拠を表示し、正確な OS 名・バージョンや端末種別の保証はしません。
 - **VLAN**: 観測フレームの 802.1Q / QinQ と Linux の VLAN auxiliary data を使用します。NIC の offload / bridge 設定次第で見え方が変わるため、VLAN ごとの Linux インターフェースを監視する構成を推奨します。
 
-IEEE データの取得例（取得元への通信はこの明示的なダウンロードだけです）:
+`mdns_lookup` は既定で有効です。観測した直結 IPv4 にだけ [mDNS の逆引き](https://www.rfc-editor.org/rfc/rfc6762#section-4)を送り、応答の送信元 IP と PTR の対象が一致する場合に採用します。名前が分かれば問い合わせを止め、無応答の場合は 5 分後に再試行します。キューは `max_devices` 件まで、10 分以上再観測しない対象は削除します。外部 DNS サーバーへは送信しません。送信元 IPv4 のないインターフェースや tagged trunk では問い合わせず、VLAN インターフェースを指定してください。完全な受動監視にする場合は `mdns_lookup: false` と `active_arp: false` を設定します。
+
+mDNS 非対応機器、スリープ中の機器、マルチキャストが遮断されている環境では名前を取得できない場合があります。LAN の DNS に PTR が登録されている場合は `reverse_dns: true` も利用できます。Kubernetes では Pod の DNS（通常は CoreDNS）がその LAN の逆引きを解決できる必要があります。IPv6 の mDNS は受動観測のみです。
+
+内蔵データは IEEE の MA-L / MA-M / MA-S 公開 CSV のスナップショットです。取得日時・件数・元ファイルの SHA-256 は [`vendors.sources.json`](internal/monitor/vendors.sources.json) に記録し、prefix と組織名だけを gzip 圧縮してバイナリに埋め込みます。開発時の更新は `python3 scripts/update-vendors.py` で行います。通常のビルド・起動時にダウンロードは行いません。
+
+追加・上書き用 IEEE データの取得例:
 
 ```sh
 curl --fail --location https://standards-oui.ieee.org/oui/oui.csv --output oui.csv
@@ -210,7 +219,7 @@ stale から online への復帰は履歴に残しますが、接続通知を繰
 
 インターフェースの消失、down、MAC / アドレス変更、socket 異常時はプロセスを停止します。カーネルまたはアプリ受信キューの取りこぼしが発生した場合、最後の取りこぼしから `offline_after` の間、無通信による状態移行を止めます。SSE / readiness とセンサーカウンターで異常を確認できます。
 
-Discord 通知は必要最小限の **MAC、インターフェース、時刻、状態**に限定し、ホスト名や IP を送りません。メンションは無効です。HTTPS の `discord.com` / `canary.discord.com` / `ptb.discord.com` Webhook のみ許可し、リダイレクトは追従しません。10 秒の HTTP timeout、429 / 5xx / 通信失敗への最大 3 回の試行があります。失敗時も秘密の URL はログに含めません。
+Discord 通知は [Embed](https://discord.com/developers/docs/resources/message#embed-object) 形式で、観測開始・再開は緑、オフライン推定は橙色に表示します。必要最小限の **MAC、インターフェース、時刻、状態**に限定し、ホスト名や IP を送りません。メンションは無効です。HTTPS の `discord.com` / `canary.discord.com` / `ptb.discord.com` Webhook のみ許可し、リダイレクトは追従しません。10 秒の HTTP timeout、429 / 5xx / 通信失敗への最大 3 回の試行があります。失敗時も秘密の URL はログに含めません。
 
 通知は上限 128 件のメモリキューを使う best-effort 配信です。再起動時の未送信通知の再配信、exactly-once 配信は提供しません。過負荷・失敗はログと API のカウンターで確認でき、イベント自体はローカル履歴に残ります。他プロバイダーは `internal/notify.Provider` を実装して追加できます。
 
@@ -249,7 +258,7 @@ bunx playwright install chromium
 bun run test                      # 認証、一覧、履歴、設定、モバイル幅
 cd ..
 docker build -t tunwatch:local .
-python3 scripts/integration.py    # 隔離 Docker network で実 ARP / 状態遷移 / 再起動
+python3 scripts/integration.py    # 隔離 Docker network で実 ARP・mDNS / 状態遷移 / 再起動
 ```
 
 統合テストは `192.0.2.0/29` の一時的な internal Docker network、専用コンテナ、専用 volume を作成し、終了時に自身のリソースだけを削除します。実 LAN を監視せず、Discord に送信しません。Docker と Python 3 が必要です。

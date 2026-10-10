@@ -36,6 +36,8 @@ def main():
     with tempfile.TemporaryDirectory(prefix="tunwatch-integration-") as directory:
         path = Path(directory)
         path.chmod(0o755)
+        subprocess.run(["go", "build", "-o", str(path / "mdns-responder"), "scripts/testdata/mdns-responder.go"],
+                       env={**os.environ, "CGO_ENABLED": "0"}, check=True)
         config = {"listen": "0.0.0.0:8080", "interfaces": ["must-not-use"],
                   "node_profiles": {"sensor-a": {"interfaces": ["eth0"]},
                                     "sensor-b": {"interfaces": ["other-nic.30"]}},
@@ -47,7 +49,12 @@ def main():
         env.write_text("TUNWATCH_API_TOKEN=" + token + "\nTUNWATCH_NODE_NAME=sensor-a\n")
         env.chmod(0o600)
         try:
-            docker("network", "create", "--internal", "--subnet", "192.0.2.0/29", network)
+            # Docker --internal drops forwarded multicast as outside the IPv4 subnet.
+            # Omit the bridge gateway address and NAT instead: local multicast works,
+            # but these containers have no reachable default gateway or external egress.
+            docker("network", "create", "--opt", "com.docker.network.bridge.inhibit_ipv4=true",
+                   "--opt", "com.docker.network.bridge.enable_ip_masquerade=false",
+                   "--subnet", "192.0.2.0/29", network)
             docker("volume", "create", volume)
             docker("run", "-d", "--name", sensor, "--network", network, "--ip", "192.0.2.2",
                    "--cap-drop", "ALL", "--cap-add", "NET_RAW", "--read-only",
@@ -60,7 +67,7 @@ def main():
             created.append(inspector)
 
             def get(endpoint):
-                # The internal bridge has no host-published ports or external egress.
+                # The test bridge has no gateway address, NAT, or host-published ports.
                 return json.loads(docker("exec", inspector, "sh", "-c",
                     'wget -qO- --header "Authorization: Bearer $TUNWATCH_API_TOKEN" '
                     + 'http://192.0.2.2:8080' + endpoint))
@@ -83,7 +90,7 @@ def main():
             assert int(fields["CapInh"].strip(), 16) == 0
             assert fields["NoNewPrivs"].strip() == "1"
             docker("run", "-d", "--name", client, "--network", network, "--ip", "192.0.2.3",
-                   "alpine:3.23", "sleep", "300")
+                   "-v", str(path) + ":/fixture:ro", "alpine:3.23", "/fixture/mdns-responder")
             created.append(client)
             docker("exec", client, "ping", "-c", "2", "192.0.2.2")
 
@@ -94,6 +101,10 @@ def main():
             found = wait_for(lambda: device("online"))
             assert "arp" in found["sources"]
             assert "192.0.2.2" not in [ip for d in get("/api/v1/devices")["devices"] for ip in d["ips"]]
+            wait_for(lambda: (device("online") or {}).get("hostname", {}).get("value") == "integration-client.local")
+            assert device("online")["hostname"]["source"] == "mdns"
+            assert get("/api/v1/status")["capture"]["interfaces"][0]["mdns_sent"] > 0
+            print("PASS: active mDNS PTR query and response enrich the matching client", flush=True)
             print("PASS: NET_RAW capture with capabilities dropped after startup, ARP sender attribution, own-address exclusion", flush=True)
             docker("stop", "-t", "1", client)
             wait_for(lambda: device("stale"))
@@ -102,17 +113,23 @@ def main():
             events = get("/api/v1/events?limit=100")["events"]
             assert any(e["type"] == "offline" and e["device"]["id"] == found["id"] for e in events)
             config["active_arp"] = True
+            config["networks"] = []  # infer the connected IPv4 scope
             (path / "config.json").write_text(json.dumps(config))
+            arp_start = time.monotonic()
             docker("restart", "-t", "8", sensor)
             wait_for(lambda: get("/api/v1/status")["ready"])
             assert any(e["type"] == "offline" for e in get("/api/v1/events")["events"])
             docker("start", client)
             wait_for(lambda: device("online"))
             assert get("/api/v1/status")["capture"]["interfaces"][0]["probe_targets"] == 5
-            print("PASS: compressed history survives restart; active ARP rediscovers silent client", flush=True)
+            sent = get("/api/v1/status")["capture"]["interfaces"][0]["arp_sent"]
+            assert 0 < sent <= (time.monotonic() - arp_start) * 2 + 1
+            print("PASS: compressed history survives restart; bounded ARP in inferred scope rediscovers silent client", flush=True)
         except Exception:
             if sensor in created:
                 print(docker("logs", sensor))
+            if client in created:
+                print(docker("logs", client))
             raise
         finally:
             for name in reversed(created):

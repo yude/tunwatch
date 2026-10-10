@@ -1,0 +1,21 @@
+{
+  "retrieved_at": "2026-10-09T21:47:27.411070+00:00",
+  "sources": [
+    {
+      "url": "https://standards-oui.ieee.org/oui/oui.csv",
+      "sha256": "d2e8eb02bc98337a44e246b11e1a63467ac37dd51bd6490bbdde0ad3a8f7b559",
+      "records": 40319
+    },
+    {
+      "url": "https://standards-oui.ieee.org/oui28/mam.csv",
+      "sha256": "f259ca7090319f23ccef7af1f6698aa983e5924b2e5536b297f99e3725c91a1c",
+      "records": 6628
+    },
+    {
+      "url": "https://standards-oui.ieee.org/oui36/oui36.csv",
+      "sha256": "db7b936eb75cc6695623956dd9b9baebaf422822aeea3c57c2db05b3ff6d9079",
+      "records": 7226
+    }
+  ],
+  "records": 54170
+}

@@ -24,7 +24,10 @@ type Capture struct {
 	iface            net.Interface
 	fd               int
 	prefixes         []netip.Prefix
+	local            []netip.Prefix
 	targets          []probe
+	ARPSent          atomic.Uint64
+	MDNSSent         atomic.Uint64
 	Received         atomic.Uint64
 	Dropped          atomic.Uint64
 	KernelDropped    atomic.Uint64
@@ -57,7 +60,7 @@ func OpenCapture(name string, c config.Config) (*Capture, error) {
 			local = append(local, p)
 		}
 	}
-	x := &Capture{iface: *iface, fd: -1, prefixes: c.Prefixes, allowUnaddressed: len(c.Prefixes) == 0, addressKey: addressKey(addrs)}
+	x := &Capture{iface: *iface, fd: -1, prefixes: c.Prefixes, local: local, allowUnaddressed: len(c.Prefixes) == 0, addressKey: addressKey(addrs)}
 	if len(x.prefixes) == 0 {
 		for _, p := range local {
 			x.prefixes = append(x.prefixes, p.Masked())
@@ -67,7 +70,7 @@ func OpenCapture(name string, c config.Config) (*Capture, error) {
 		return nil, fmt.Errorf("%s needs connected addresses or explicit networks", name)
 	}
 	if c.ActiveARP {
-		x.targets, err = scanTargets(c.Prefixes, local)
+		x.targets, err = scanTargets(x.prefixes, local)
 		if err != nil {
 			return nil, err
 		}
@@ -168,6 +171,7 @@ func (x *Capture) Run(ctx context.Context, c config.Config, out chan<- model.Obs
 	buf := make([]byte, 1152)
 	control := make([]byte, 128)
 	lastCheck := time.Time{}
+	names := nameProbes{}
 	for ctx.Err() == nil {
 		select {
 		case err := <-scanErr:
@@ -189,6 +193,14 @@ func (x *Capture) Run(ctx context.Context, c config.Config, out chan<- model.Obs
 				return e
 			}
 			x.KernelDropped.Add(uint64(stats.Drops))
+			if c.MDNSLookup {
+				if v, ok := names.next(time.Now()); ok {
+					if err := x.queryName(v); err != nil {
+						return fmt.Errorf("mDNS probe failed: %w", err)
+					}
+					x.MDNSSent.Add(1)
+				}
+			}
 		}
 		fds := []unix.PollFd{{Fd: int32(x.fd), Events: unix.POLLIN}}
 		_, err := unix.Poll(fds, 1000)
@@ -229,6 +241,9 @@ func (x *Capture) Run(ctx context.Context, c config.Config, out chan<- model.Obs
 				}
 			}
 		}
+		if c.MDNSLookup {
+			names.observe(o, x.local, c.MaxDevices)
+		}
 		x.Received.Add(1)
 		select {
 		case out <- o:
@@ -241,6 +256,9 @@ func (x *Capture) Run(ctx context.Context, c config.Config, out chan<- model.Obs
 func scanTargets(networks, local []netip.Prefix) ([]probe, error) {
 	var out []probe
 	seen := map[netip.Addr]bool{}
+	for _, p := range local {
+		seen[p.Addr()] = true
+	}
 	for _, p := range networks {
 		if !p.Addr().Is4() {
 			continue
@@ -293,6 +311,7 @@ func (x *Capture) scan(ctx context.Context, c config.Config) error {
 			if err := unix.Sendto(x.fd, frame, 0, &unix.SockaddrLinklayer{Ifindex: x.iface.Index, Protocol: htons(unix.ETH_P_ARP), Halen: 6, Addr: [8]byte{255, 255, 255, 255, 255, 255}}); err != nil {
 				return fmt.Errorf("ARP probe failed: %w", err)
 			}
+			x.ARPSent.Add(1)
 		}
 		wait := time.NewTimer(max(time.Millisecond, c.Scan-time.Since(start)))
 		select {

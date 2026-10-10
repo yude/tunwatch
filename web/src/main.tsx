@@ -35,12 +35,14 @@ type Status = {
     networks: string[];
     active_arp: boolean;
     reverse_dns: boolean;
+    mdns_lookup: boolean;
     stale_after: string;
     offline_after: string;
     retention_days: number;
     history_max_mb: number;
     max_devices: number;
     scan_interval: string;
+    probe_rate: number;
   };
   capture: {
     demo: boolean;
@@ -51,6 +53,8 @@ type Status = {
       queue_dropped: number;
       kernel_dropped: number;
       probe_targets: number;
+      arp_sent: number;
+      mdns_sent: number;
     }[];
     notifications?: { sent: number; failed: number; dropped: number };
   };
@@ -686,8 +690,15 @@ function App() {
                     </dd>
                     <dt>アクティブ ARP 探索</dt>
                     <dd>
-                      {status.config.active_arp ? "有効" : "無効（受動監視）"}
+                      {status.config.active_arp ? "有効" : "無効"}
                     </dd>
+                    <dt>ARP 探索周期 / 送信上限</dt>
+                    <dd>
+                      {status.config.scan_interval} / {status.config.probe_rate}{" "}
+                      件/秒
+                    </dd>
+                    <dt>mDNS ホスト名探索</dt>
+                    <dd>{status.config.mdns_lookup ? "有効" : "無効"}</dd>
                     <dt>逆引き DNS</dt>
                     <dd>{status.config.reverse_dns ? "有効" : "無効"}</dd>
                   </dl>
@@ -719,6 +730,10 @@ function App() {
                       <dd>{i.kernel_dropped}</dd>
                       <dt>ARP 探索対象</dt>
                       <dd>{i.probe_targets}</dd>
+                      <dt>ARP 送信数（起動後）</dt>
+                      <dd>{i.arp_sent}</dd>
+                      <dt>mDNS 送信数（起動後）</dt>
+                      <dd>{i.mdns_sent}</dd>
                     </dl>
                   ))}
                   <dl>

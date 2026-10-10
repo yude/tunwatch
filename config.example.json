@@ -9,9 +9,10 @@
   "retention_days": 30,
   "history_max_mb": 128,
   "max_devices": 4096,
-  "active_arp": false,
-  "scan_interval": "2m",
-  "probe_rate": 10,
+  "active_arp": true,
+  "scan_interval": "5m",
+  "probe_rate": 2,
+  "mdns_lookup": true,
   "reverse_dns": false,
   "vendor_file": ""
 }

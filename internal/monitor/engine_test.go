@@ -121,3 +121,20 @@ func TestScanStaysOnLinkAndBounded(t *testing.T) {
 		t.Fatal("unbounded scan")
 	}
 }
+
+func TestScanExcludesAllLocalAddressesAndDuplicateNetworks(t *testing.T) {
+	local := []netip.Prefix{netip.MustParsePrefix("192.0.2.1/24"), netip.MustParsePrefix("192.0.2.2/24")}
+	networks := []netip.Prefix{netip.MustParsePrefix("192.0.2.0/24"), netip.MustParsePrefix("192.0.2.0/25")}
+	probes, err := scanTargets(networks, local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(probes) != 252 {
+		t.Fatalf("expected 252 distinct targets, got %d", len(probes))
+	}
+	for _, p := range probes {
+		if p.target == local[0].Addr() || p.target == local[1].Addr() {
+			t.Fatal("probing own address")
+		}
+	}
+}

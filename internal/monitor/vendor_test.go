@@ -36,3 +36,18 @@ func TestVendorLongestPrefixAndRestartEnrichment(t *testing.T) {
 		}
 	}
 }
+
+func TestBundledVendors(t *testing.T) {
+	v, err := LoadVendors("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(v) < 50000 {
+		t.Fatalf("incomplete registry: %d", len(v))
+	}
+	for mac, want := range map[string]string{"00:00:0c:00:00:01": "Cisco Systems, Inc", "b8:27:eb:00:00:01": "Raspberry Pi Foundation"} {
+		if got := v.Lookup(mac); got != want {
+			t.Errorf("%s: %q, want %q", mac, got, want)
+		}
+	}
+}

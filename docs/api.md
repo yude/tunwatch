@@ -68,3 +68,5 @@ data: {"time":"2026-10-09T12:01:00Z","ready":true,"devices":[...]}
 - `503`: readiness、ストリーム上限、履歴ストレージの問題
 
 エラー本文は短い plain text です。API は読み取り中心で、設定や任意コマンド実行の endpoint はありません。
+
+`GET /api/v1/status` の `capture.interfaces[]` には `probe_targets`（ARP 探索対象数）、`arp_sent` / `mdns_sent`（起動後の送信数）を含めます。送信上限と周期は `config.probe_rate` / `config.scan_interval`、mDNS の有効・無効は `config.mdns_lookup` で確認できます。

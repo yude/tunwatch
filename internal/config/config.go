@@ -36,6 +36,7 @@ type Config struct {
 	ActiveARP     bool           `json:"active_arp"`
 	ScanInterval  string         `json:"scan_interval"`
 	ProbeRate     int            `json:"probe_rate"`
+	MDNSLookup    bool           `json:"mdns_lookup"`
 	ReverseDNS    bool           `json:"reverse_dns"`
 	VendorFile    string         `json:"vendor_file"`
 	Demo          bool           `json:"demo"`
@@ -49,7 +50,7 @@ type Config struct {
 }
 
 func Load(path string) (Config, error) {
-	c := Config{Listen: "127.0.0.1:8080", DataDir: "./data", StaleAfter: "5m", OfflineAfter: "30m", StartupGrace: "30s", RetentionDays: 30, HistoryMaxMB: 128, MaxDevices: 4096, ScanInterval: "2m", ProbeRate: 10}
+	c := Config{Listen: "127.0.0.1:8080", DataDir: "./data", StaleAfter: "5m", OfflineAfter: "30m", StartupGrace: "30s", RetentionDays: 30, HistoryMaxMB: 128, MaxDevices: 4096, ScanInterval: "5m", ProbeRate: 2, ActiveARP: true, MDNSLookup: true}
 	f, err := os.Open(path)
 	if err != nil {
 		return c, err
@@ -63,6 +64,9 @@ func Load(path string) (Config, error) {
 	var extra any
 	if d.Decode(&extra) != io.EOF {
 		return c, errors.New("config must contain one JSON object")
+	}
+	if c.Demo {
+		c.ActiveARP, c.MDNSLookup, c.ReverseDNS = false, false, false
 	}
 	if err = c.resolveNode(strings.TrimSpace(os.Getenv("TUNWATCH_NODE_NAME"))); err != nil {
 		return c, err
@@ -160,8 +164,8 @@ func (c *Config) Validate() error {
 		}
 		c.Prefixes = append(c.Prefixes, p)
 	}
-	if c.ActiveARP && len(c.Prefixes) == 0 {
-		return errors.New("active_arp requires explicit networks")
+	if c.ActiveARP && c.Scan >= c.Offline {
+		return errors.New("active_arp requires scan_interval shorter than offline_after")
 	}
 	return nil
 }

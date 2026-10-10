@@ -150,6 +150,18 @@ func dhcp(p []byte, o *model.Observation) {
 		switch code {
 		case 12:
 			o.Hostname = cleanName(string(p[i : i+n]))
+		case 81:
+			// RFC 4702: flags, two rcodes, then an uncompressed DNS or ASCII name.
+			if n > 3 && o.Hostname == "" {
+				value := p[i : i+n]
+				if value[0]&4 != 0 {
+					if name, end, ok := uncompressedName(value[3:]); ok && end == n-3 {
+						o.Hostname = cleanName(name)
+					}
+				} else {
+					o.Hostname = cleanName(string(value[3:]))
+				}
+			}
 		case 60:
 			if n <= 128 {
 				o.VendorClass = string(p[i : i+n])
@@ -167,4 +179,19 @@ func decodeMDNSUDP(u []byte, o *model.Observation) {
 	if n >= 20 && n <= len(u) {
 		mdns(u[8:n], o)
 	}
+}
+
+// DHCP option 81 prohibits DNS compression pointers.
+func uncompressedName(b []byte) (string, int, bool) {
+	for i := 0; i < len(b); {
+		n := int(b[i])
+		if n > 63 || i+1+n > len(b) {
+			return "", 0, false
+		}
+		if n == 0 {
+			return dnsName(b, 0)
+		}
+		i += n + 1
+	}
+	return "", 0, false
 }

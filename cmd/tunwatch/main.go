@@ -107,7 +107,7 @@ func run() error {
 	api.Stats = func() any {
 		items := []map[string]any{}
 		for _, cap := range captures {
-			items = append(items, map[string]any{"interface": cap.Name(), "observations": cap.Received.Load(), "queue_dropped": cap.Dropped.Load(), "kernel_dropped": cap.KernelDropped.Load(), "probe_targets": cap.TargetCount()})
+			items = append(items, map[string]any{"interface": cap.Name(), "observations": cap.Received.Load(), "queue_dropped": cap.Dropped.Load(), "kernel_dropped": cap.KernelDropped.Load(), "probe_targets": cap.TargetCount(), "arp_sent": cap.ARPSent.Load(), "mdns_sent": cap.MDNSSent.Load()})
 		}
 		stats := map[string]any{"interfaces": items, "version": version, "demo": c.Demo}
 		if worker != nil {

@@ -46,7 +46,15 @@ func mdns(p []byte, o *model.Observation) {
 		if typ == 28 && n == 16 {
 			addr = netip.AddrFrom16([16]byte(p[pos : pos+16]))
 		}
-		if class == 1 && addr.IsValid() && addr.String() == o.IP && strings.HasSuffix(strings.ToLower(name), ".local") {
+		if class == 1 && typ == 12 && binary.BigEndian.Uint32(p[next+4:next+8]) > 0 && strings.EqualFold(name, reverseName(o.IP)) {
+			if host, end, ok := dnsName(p, pos); ok && end == pos+n && strings.HasSuffix(strings.ToLower(host), ".local") {
+				if host = cleanName(host); host != "" {
+					o.Hostname, o.Source = host, "mdns"
+					return
+				}
+			}
+		}
+		if binary.BigEndian.Uint32(p[next+4:next+8]) > 0 && class == 1 && addr.IsValid() && addr.String() == o.IP && strings.HasSuffix(strings.ToLower(name), ".local") {
 			if name = cleanName(name); name != "" {
 				o.Hostname = name
 				o.Source = "mdns"

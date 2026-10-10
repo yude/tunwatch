@@ -1,6 +1,9 @@
 package monitor
 
 import (
+	"bytes"
+	"compress/gzip"
+	_ "embed"
 	"encoding/csv"
 	"errors"
 	"io"
@@ -10,11 +13,22 @@ import (
 	"github.com/yude/tunwatch/internal/model"
 )
 
+//go:embed vendors.csv.gz
+var bundledVendors []byte
+
 type Vendors map[string]string
 
 // LoadVendors accepts IEEE MA-L/MA-M/MA-S CSVs or a two-column prefix,vendor CSV.
 func LoadVendors(path string) (Vendors, error) {
 	v := Vendors{}
+	z, err := gzip.NewReader(bytes.NewReader(bundledVendors))
+	if err != nil {
+		return nil, err
+	}
+	defer z.Close()
+	if err := readVendors(z, v); err != nil {
+		return nil, err
+	}
 	if path == "" {
 		return v, nil
 	}
@@ -23,7 +37,14 @@ func LoadVendors(path string) (Vendors, error) {
 		return nil, err
 	}
 	defer f.Close()
-	r := csv.NewReader(io.LimitReader(f, 64<<20))
+	if err := readVendors(f, v); err != nil {
+		return nil, err
+	}
+	return v, nil
+}
+
+func readVendors(src io.Reader, v Vendors) error {
+	r := csv.NewReader(io.LimitReader(src, 64<<20))
 	r.FieldsPerRecord = -1
 	for {
 		row, e := r.Read()
@@ -31,7 +52,7 @@ func LoadVendors(path string) (Vendors, error) {
 			break
 		}
 		if e != nil {
-			return nil, e
+			return e
 		}
 		if len(row) < 2 {
 			continue
@@ -45,11 +66,11 @@ func LoadVendors(path string) (Vendors, error) {
 			continue
 		}
 		if len(prefix) != 6 && len(prefix) != 7 && len(prefix) != 9 {
-			return nil, errors.New("vendor prefix must have 6, 7 or 9 hex digits")
+			return errors.New("vendor prefix must have 6, 7 or 9 hex digits")
 		}
 		for _, c := range prefix {
 			if !strings.ContainsRune("0123456789ABCDEF", c) {
-				return nil, errors.New("invalid vendor prefix")
+				return errors.New("invalid vendor prefix")
 			}
 		}
 		if len(name) > 256 {
@@ -57,7 +78,7 @@ func LoadVendors(path string) (Vendors, error) {
 		}
 		v[prefix] = name
 	}
-	return v, nil
+	return nil
 }
 func (v Vendors) Lookup(mac string) string {
 	key := strings.ToUpper(strings.ReplaceAll(mac, ":", ""))

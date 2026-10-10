@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/yude/tunwatch/internal/model"
 )
@@ -34,6 +35,26 @@ func TestMinimalPayloadAndNoMentions(t *testing.T) {
 		if string(body["allowed_mentions"]) != `{"parse":[]}` {
 			t.Error("mentions enabled")
 		}
+		var embeds []struct {
+			Title     string
+			Color     int
+			Timestamp string
+			Fields    []struct{ Name, Value string }
+		}
+		if err := json.Unmarshal(body["embeds"], &embeds); err != nil || len(embeds) != 1 {
+			t.Errorf("missing embed: %s", raw)
+		} else {
+			e := embeds[0]
+			if e.Color != 0x22c55e || !strings.Contains(e.Title, "観測") || len(e.Fields) != 2 || e.Fields[0].Value != "00:11:22:33:44:55" {
+				t.Errorf("bad embed: %+v", e)
+			}
+			if _, err := time.Parse(time.RFC3339, e.Timestamp); err != nil {
+				t.Error(err)
+			}
+		}
+		if _, ok := body["content"]; ok {
+			t.Error("plain text payload remains")
+		}
 		w.WriteHeader(204)
 	}))
 	defer ts.Close()
@@ -49,5 +70,28 @@ func TestErrorsDoNotExposeWebhookSecret(t *testing.T) {
 	err := d.Send(context.Background(), model.Event{})
 	if err == nil || strings.Contains(err.Error(), "secret-token") {
 		t.Fatalf("unsafe error: %v", err)
+	}
+}
+
+func TestOfflineEmbed(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			Embeds []struct {
+				Title string
+				Color int
+			}
+		}
+		if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+			t.Error(err)
+		}
+		if len(b.Embeds) != 1 || b.Embeds[0].Color != 0xf59e0b || !strings.Contains(b.Embeds[0].Title, "推定") {
+			t.Errorf("bad offline embed: %+v", b)
+		}
+		w.WriteHeader(204)
+	}))
+	defer ts.Close()
+	d := &Discord{endpoint: ts.URL, client: ts.Client()}
+	if err := d.Send(context.Background(), model.Event{Type: "offline", Time: time.Now()}); err != nil {
+		t.Fatal(err)
 	}
 }

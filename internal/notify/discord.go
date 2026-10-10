@@ -37,12 +37,29 @@ func NewDiscord(raw string) (*Discord, error) {
 	return &Discord{endpoint: raw, client: &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
 func (d *Discord) Send(ctx context.Context, e model.Event) error {
-	status := "観測を開始 / 再開"
+	status, color := "観測を開始 / 再開", 0x22c55e
 	if e.Type == "offline" {
-		status = "オフライン推定（無通信タイムアウト）"
+		status, color = "オフライン推定（無通信タイムアウト）", 0xf59e0b
 	}
-	// Deliberately omit hostname, vendor and addresses other than MAC from the outbound payload.
-	body, _ := json.Marshal(map[string]any{"content": fmt.Sprintf("tunwatch · %s\nMAC: %s\nInterface: %s\nTime: %s", status, e.Device.MAC, e.Device.Interface, e.Time.UTC().Format(time.RFC3339)), "allowed_mentions": map[string]any{"parse": []string{}}})
+	// Keep the same minimal outbound identity fields, rendered as a Discord embed.
+	field := func(name, value string) map[string]any {
+		if value == "" {
+			value = "未取得"
+		}
+		r := []rune(value)
+		if len(r) > 1024 {
+			value = string(r[:1024])
+		}
+		return map[string]any{"name": name, "value": value, "inline": true}
+	}
+	body, _ := json.Marshal(map[string]any{
+		"embeds": []any{map[string]any{
+			"title": "tunwatch · " + status, "color": color,
+			"timestamp": e.Time.UTC().Format(time.RFC3339),
+			"fields":    []any{field("MAC", e.Device.MAC), field("Interface", e.Device.Interface)},
+		}},
+		"allowed_mentions": map[string]any{"parse": []string{}},
+	})
 	for attempt := 0; attempt < 3; attempt++ {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, d.endpoint, bytes.NewReader(body))
 		if err != nil {
