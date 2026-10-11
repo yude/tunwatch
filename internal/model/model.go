@@ -8,12 +8,24 @@ type Hint struct {
 	Source     string `json:"source"`
 	Confidence string `json:"confidence"`
 }
+type VIP struct {
+	IP     string `json:"ip"`
+	Source string `json:"source"`
+	VRID   int    `json:"vrid,omitempty"`
+}
+type ScopedVIP struct {
+	Interface string `json:"interface"`
+	VLAN      string `json:"vlan,omitempty"`
+	VIP
+}
 type Device struct {
 	ID        string    `json:"id"`
 	Interface string    `json:"interface"`
 	VLAN      string    `json:"vlan,omitempty"`
 	MAC       string    `json:"mac"`
 	IPs       []string  `json:"ips"`
+	VIPs      []VIP     `json:"vips,omitempty"`
+	VIPOnly   bool      `json:"vip_only"`
 	HostsName Hint      `json:"hosts_name"`
 	Hostname  Hint      `json:"hostname"`
 	Vendor    string    `json:"vendor,omitempty"`
@@ -26,6 +38,7 @@ type Device struct {
 }
 type Observation struct {
 	Interface, VLAN, MAC, IP, Source, Hostname, VendorClass string
+	VIPs                                                    []VIP
 	TTL                                                     int
 	At                                                      time.Time
 }

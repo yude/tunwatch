@@ -38,6 +38,8 @@ def main():
         path.chmod(0o755)
         subprocess.run(["go", "build", "-o", str(path / "mdns-responder"), "scripts/testdata/mdns-responder.go"],
                        env={**os.environ, "CGO_ENABLED": "0"}, check=True)
+        subprocess.run(["go", "build", "-o", str(path / "vrrp-sender"), "scripts/testdata/vrrp-sender.go"],
+                       env={**os.environ, "CGO_ENABLED": "0"}, check=True)
         config = {"listen": "0.0.0.0:8080", "interfaces": ["must-not-use"],
                   "node_profiles": {"sensor-a": {"interfaces": ["eth0"]},
                                     "sensor-b": {"interfaces": ["other-nic.30"]}},
@@ -105,6 +107,12 @@ def main():
             assert device("online")["hostname"]["source"] == "mdns"
             assert get("/api/v1/status")["capture"]["interfaces"][0]["mdns_sent"] > 0
             print("PASS: active mDNS PTR query and response enrich the matching client", flush=True)
+            docker("exec", client, "/fixture/vrrp-sender")
+            vip = wait_for(lambda: get("/api/v1/vips?ip=192.0.2.1")["vips"])
+            assert vip == [{"interface": "eth0", "ip": "192.0.2.1", "source": "vrrp_advertisement", "vrid": 42}]
+            assert not device("online")["vip_only"]
+            assert any(v["ip"] == "192.0.2.1" for v in device("online")["vips"])
+            print("PASS: real VRRP advertisement crosses the BPF filter and marks the VIP without hiding the physical client", flush=True)
             print("PASS: NET_RAW capture with capabilities dropped after startup, ARP sender attribution, own-address exclusion", flush=True)
             docker("stop", "-t", "1", client)
             wait_for(lambda: device("stale"))

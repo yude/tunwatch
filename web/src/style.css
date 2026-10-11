@@ -420,6 +420,17 @@ nav button:hover {
 .filters .unnamed-filter {
   margin-left: auto;
 }
+.vip-badge {
+  display: inline-block;
+  margin-left: 7px;
+  padding: 2px 5px;
+  border: 1px solid #6a729e;
+  border-radius: 4px;
+  color: #b7bfff;
+  font-size: 10px;
+  font-family: inherit;
+  vertical-align: middle;
+}
 .filters button span {
   padding: 2px 5px;
   background: #273740;

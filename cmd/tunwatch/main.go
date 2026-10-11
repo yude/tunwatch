@@ -272,6 +272,12 @@ func demo(ctx context.Context, out chan<- model.Observation) {
 				return
 			}
 		}
+		vip := model.Observation{Interface: "demo0", MAC: "00:00:5e:00:01:2a", IP: "192.0.2.1", Source: "arp", At: time.Now().UTC(), VIPs: []model.VIP{{IP: "192.0.2.1", Source: "vrrp_mac", VRID: 42}}}
+		select {
+		case out <- vip:
+		case <-ctx.Done():
+			return
+		}
 		cycle++
 		select {
 		case <-tick.C:

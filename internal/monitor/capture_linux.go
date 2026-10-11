@@ -87,15 +87,16 @@ func OpenCapture(name string, c config.Config) (*Capture, error) {
 		x.Close()
 		return nil, err
 	}
-	// Kernel truncates general IP traffic to headers. DHCP/mDNS/VLAN use a bounded snaplen.
+	// Kernel truncates general IP traffic to headers. DHCP/mDNS/VLAN/VRRP use a bounded snaplen.
 	filter := []unix.SockFilter{
 		{Code: 0x28, K: 12},
-		{Code: 0x15, Jt: 16, K: 0x0806}, // ARP -> 64
-		{Code: 0x15, Jt: 9, K: 0x86dd},  // IPv6 branch
-		{Code: 0x15, Jt: 15, K: 0x8100}, // VLAN -> 1152
-		{Code: 0x15, Jt: 14, K: 0x88a8},
-		{Code: 0x15, Jf: 14, K: 0x0800},     // other -> drop
+		{Code: 0x15, Jt: 17, K: 0x0806}, // ARP -> 64
+		{Code: 0x15, Jt: 10, K: 0x86dd}, // IPv6 branch
+		{Code: 0x15, Jt: 16, K: 0x8100}, // VLAN -> 1152
+		{Code: 0x15, Jt: 15, K: 0x88a8},
+		{Code: 0x15, Jf: 15, K: 0x0800},     // other -> drop
 		{Code: 0x30, K: 23},                 // IPv4 protocol
+		{Code: 0x15, Jt: 12, K: 112},        // VRRP -> 1152
 		{Code: 0x15, Jf: 8, K: 17},          // non-UDP -> 74
 		{Code: 0xb1, K: 14},                 // X = IHL
 		{Code: 0x48, K: 14},                 // UDP source port

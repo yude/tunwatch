@@ -9,12 +9,15 @@ type Hint = {
   source: string;
   confidence: string;
 };
+type VIP = { ip: string; source: string; vrid?: number };
 type Device = {
   id: string;
   interface: string;
   vlan?: string;
   mac: string;
   ips: string[];
+  vips?: VIP[];
+  vip_only: boolean;
   hostname: Hint;
   hosts_name?: Hint;
   vendor?: string;
@@ -181,6 +184,7 @@ function App() {
     [query, setQuery] = useState(""),
     [filter, setFilter] = useState("all"),
     [unnamedOnly, setUnnamedOnly] = useState(false),
+    [showVIPs, setShowVIPs] = useState(false),
     [selected, setSelected] = useState<Device | null>(null),
     [loading, setLoading] = useState(false);
   useEffect(() => {
@@ -287,12 +291,14 @@ function App() {
     setStatus(null);
     setLive(false);
   }
-  const counts = devices.reduce(
+  const hiddenVIPCount = devices.filter((d) => d.vip_only).length;
+  const inventory = showVIPs ? devices : devices.filter((d) => !d.vip_only);
+  const counts = inventory.reduce(
     (a, d) => ({ ...a, [d.status]: (a[d.status] || 0) + 1 }),
     {} as Record<string, number>,
   );
-  const unnamedCount = devices.filter((d) => !deviceName(d)).length;
-  const filtered = devices.filter(
+  const unnamedCount = inventory.filter((d) => !deviceName(d)).length;
+  const filtered = inventory.filter(
     (d) =>
       (filter === "all" || d.status === filter) &&
       (!unnamedOnly || !deviceName(d)) &&
@@ -302,6 +308,7 @@ function App() {
         d.mac,
         d.vendor,
         ...d.ips,
+        ...(d.vips?.map((vip) => vip.ip) || []),
         d.interface,
       ]
         .join(" ")
@@ -398,7 +405,7 @@ function App() {
               <Icon name={id} />
               {label}
               {id === "devices" && (
-                <span className="nav-count">{devices.length}</span>
+                  <span className="nav-count">{inventory.length}</span>
               )}
             </button>
           ))}
@@ -497,7 +504,7 @@ function App() {
                       />
                     </span>
                     <strong className={key === "online" ? "mint" : ""}>
-                      {key === "all" ? devices.length : counts[key] || 0}
+                      {key === "all" ? inventory.length : counts[key] || 0}
                       <small>台</small>
                     </strong>
                     <span className="metric-sub">
@@ -537,7 +544,7 @@ function App() {
                       onClick={() => setFilter(id)}
                     >
                       {label}
-                      {id === "all" && <span>{devices.length}</span>}
+                      {id === "all" && <span>{inventory.length}</span>}
                     </button>
                   ))}
                   <button
@@ -546,6 +553,13 @@ function App() {
                     onClick={() => setUnnamedOnly((current) => !current)}
                   >
                     名称不明のみ <span>{unnamedCount}</span>
+                  </button>
+                  <button
+                    className={showVIPs ? "active" : ""}
+                    aria-pressed={showVIPs}
+                    onClick={() => setShowVIPs((current) => !current)}
+                  >
+                    VIP も表示 <span>{hiddenVIPCount}</span>
                   </button>
                 </div>
                 <div className="table-wrap">
@@ -581,6 +595,7 @@ function App() {
                                 >
                                   {deviceName(d) || "名前未取得の端末"}
                                 </button>
+                                {d.vip_only && <span className="vip-badge">VIP</span>}
                                 <small>
                                   {d.hosts_name?.value && (
                                     <span title={d.hosts_name.detail}>
@@ -597,6 +612,9 @@ function App() {
                           </td>
                           <td className="mono">
                             {d.ips[0] || "IP 未取得"}
+                            {d.vips?.some((vip) => vip.ip === d.ips[0]) && (
+                              <span className="vip-badge">VIP</span>
+                            )}
                             {d.ips.length > 1 && (
                               <span className="extra">+{d.ips.length - 1}</span>
                             )}
@@ -628,13 +646,13 @@ function App() {
                     <div className="empty">
                       <Icon name="network" size={32} />
                       <h3>
-                        {query || filter !== "all" || unnamedOnly
+                        {query || filter !== "all" || unnamedOnly || hiddenVIPCount > 0
                           ? "条件に一致する端末がありません"
                           : "まだ端末は観測されていません"}
                       </h3>
                       <p>
-                        {query || filter !== "all" || unnamedOnly
-                          ? "検索語やフィルタを変更してください。"
+                        {query || filter !== "all" || unnamedOnly || hiddenVIPCount > 0
+                          ? "検索語やフィルタを変更するか、VIP を表示してください。"
                           : "監視範囲とインターフェースを確認し、通信の受信をお待ちください。"}
                       </p>
                     </div>
@@ -871,6 +889,19 @@ function App() {
               <dd className="mono">{selected.mac}</dd>
               <dt>IP アドレス（観測済み）</dt>
               <dd className="mono">{selected.ips.join(", ") || "未取得"}</dd>
+              {selected.vips && selected.vips.length > 0 && (
+                <>
+                  <dt>VRRP VIP</dt>
+                  <dd className="mono">
+                    {selected.vips.map((vip) => (
+                      <div key={vip.ip}>
+                        {vip.ip} · {vip.source === "vrrp_advertisement" ? "VRRP 広告" : "仮想 MAC の ARP"}
+                        {vip.vrid ? ` · VRID ${vip.vrid}` : ""}
+                      </div>
+                    ))}
+                  </dd>
+                </>
+              )}
               <dt>インターフェース</dt>
               <dd>
                 {selected.interface}

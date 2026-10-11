@@ -56,8 +56,11 @@ func Decode(frame []byte, iface string, now time.Time) (model.Observation, bool)
 			return o, false
 		}
 		op := binary.BigEndian.Uint16(p[6:8])
-		if op != 1 && op != 2 || !bytes.Equal(p[8:14], frame[6:12]) {
+		if op != 1 && op != 2 || !bytes.Equal(p[8:14], frame[6:12]) && !isIPv4VRRPMAC(p[8:14]) {
 			return o, false
+		}
+		if isIPv4VRRPMAC(p[8:14]) {
+			o.MAC = net.HardwareAddr(p[8:14]).String()
 		}
 		a := netip.AddrFrom4([4]byte(p[14:18]))
 		if !usableIP(a) {
@@ -65,6 +68,9 @@ func Decode(frame []byte, iface string, now time.Time) (model.Observation, bool)
 		}
 		o.IP = a.String()
 		o.Source = "arp"
+		if isIPv4VRRPMAC(p[8:14]) {
+			o.VIPs = []model.VIP{{IP: o.IP, Source: "vrrp_mac", VRID: int(p[13])}}
+		}
 	case 0x0800:
 		if len(p) < 20 || p[0]>>4 != 4 {
 			return o, false
@@ -82,6 +88,17 @@ func Decode(frame []byte, iface string, now time.Time) (model.Observation, bool)
 		a := netip.AddrFrom4([4]byte(p[12:16]))
 		if usableIP(a) {
 			o.IP = a.String()
+		}
+		if p[9] == 112 {
+			if binary.BigEndian.Uint16(p[6:8])&0x3fff != 0 || total > len(p) || o.IP == "" {
+				return o, false
+			}
+			vips, ok := decodeVRRPIPv4(p[ihl:total], p[12:16], p[16:20], o.TTL)
+			if !ok {
+				return o, false
+			}
+			o.Source = "vrrp"
+			o.VIPs = vips
 		}
 		if p[9] == 17 && binary.BigEndian.Uint16(p[6:8])&0x3fff == 0 && len(p) >= ihl+8 {
 			u := p[ihl:]

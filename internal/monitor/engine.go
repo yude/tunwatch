@@ -21,6 +21,8 @@ type Engine struct {
 	mu       sync.RWMutex
 	c        config.Config
 	devices  map[string]model.Device
+	vips     map[string]model.ScopedVIP
+	vipSeen  map[string]time.Time
 	observed map[string]bool
 	updates  map[string]time.Time
 	journal  Journal
@@ -36,21 +38,40 @@ func NewEngine(c config.Config, j Journal, v Vendors, restored map[string]model.
 	if restored == nil {
 		restored = map[string]model.Device{}
 	}
+	vips := map[string]model.ScopedVIP{}
+	vipSeen := map[string]time.Time{}
 	for id, d := range restored {
 		if d.LastSeen.Before(now.Add(-time.Duration(c.RetentionDays) * 24 * time.Hour)) {
 			delete(restored, id)
 			continue
 		}
 		d.Status = "unknown"
+		for _, vip := range d.VIPs {
+			key := vipKey(d.Interface, d.VLAN, vip.IP)
+			if d.LastSeen.After(vipSeen[key]) {
+				vipSeen[key] = d.LastSeen
+			}
+			if old, found := vips[key]; !found || old.Source == "vrrp_mac" && vip.Source == "vrrp_advertisement" {
+				vips[key] = model.ScopedVIP{Interface: d.Interface, VLAN: d.VLAN, VIP: vip}
+			}
+		}
+		d.VIPOnly = isVIPOnly(d)
 		if vendor := v.Lookup(d.MAC); !d.LocalMAC && vendor != "" {
 			d.Vendor = vendor
 		}
 		restored[id] = d
 	}
-	return &Engine{c: c, journal: j, vendors: v, devices: restored, observed: map[string]bool{}, updates: map[string]time.Time{}, started: now, sequence: now.UnixNano()}
+	e := &Engine{c: c, journal: j, vendors: v, devices: restored, vips: vips, vipSeen: vipSeen, observed: map[string]bool{}, updates: map[string]time.Time{}, started: now, sequence: now.UnixNano()}
+	for id, d := range restored {
+		e.enrichVIPs(&d)
+		restored[id] = d
+	}
+	e.expireVIPs(now)
+	return e
 }
 func clone(d model.Device) model.Device {
 	d.IPs = slices.Clone(d.IPs)
+	d.VIPs = slices.Clone(d.VIPs)
 	d.Sources = slices.Clone(d.Sources)
 	return d
 }
@@ -92,6 +113,30 @@ func (e *Engine) Observe(o model.Observation) error {
 		d.Sources = append(d.Sources, o.Source)
 		changed = true
 	}
+	newVIP := false
+	vipBefore := map[string]*model.ScopedVIP{}
+	for _, vip := range o.VIPs {
+		key := vipKey(o.Interface, o.VLAN, vip.IP)
+		old, found := e.vips[key]
+		if !found || old.Source == "vrrp_mac" && vip.Source == "vrrp_advertisement" || old.Source == vip.Source && old.VRID != vip.VRID {
+			if _, seen := vipBefore[key]; !seen {
+				if found {
+					previous := old
+					vipBefore[key] = &previous
+				} else {
+					vipBefore[key] = nil
+				}
+			}
+			e.vips[key] = model.ScopedVIP{Interface: o.Interface, VLAN: o.VLAN, VIP: vip}
+			newVIP = true
+		}
+		if addVIP(&d, vip) {
+			changed = true
+		}
+	}
+	if e.enrichVIPs(&d) {
+		changed = true
+	}
 	if name := cleanName(o.Hostname); name != "" && (d.Hostname.Value == "" || o.Source == "dhcp" || d.Hostname.Source == "reverse_dns") {
 		h := model.Hint{Value: name, Source: o.Source, Confidence: "medium"}
 		if h != d.Hostname {
@@ -119,11 +164,35 @@ func (e *Engine) Observe(o model.Observation) error {
 	}
 	if typ != "" {
 		if err := e.event(d, typ, reason, o.At, !exists || old.Status == "offline"); err != nil {
+			for key, previous := range vipBefore {
+				if previous == nil {
+					delete(e.vips, key)
+				} else {
+					e.vips[key] = *previous
+				}
+			}
 			return err
 		}
 		e.updates[id] = o.At
 	}
 	e.devices[id] = d
+	for _, vip := range o.VIPs {
+		key := vipKey(o.Interface, o.VLAN, vip.IP)
+		if o.At.After(e.vipSeen[key]) {
+			e.vipSeen[key] = o.At
+		}
+	}
+	if newVIP {
+		for otherID, other := range e.devices {
+			if otherID == id || other.Interface != o.Interface || other.VLAN != o.VLAN {
+				continue
+			}
+			other = clone(other)
+			if e.enrichVIPs(&other) {
+				e.devices[otherID] = other
+			}
+		}
+	}
 	e.observed[id] = true
 	return nil
 }
@@ -133,7 +202,7 @@ func (e *Engine) event(d model.Device, typ, reason string, now time.Time, notify
 	if err := e.journal.Append(event); err != nil {
 		return err
 	}
-	if notify && e.Notify != nil && (typ == "online" || typ == "offline") && now.Sub(e.started) >= e.c.Grace {
+	if notify && !d.VIPOnly && e.Notify != nil && (typ == "online" || typ == "offline") && now.Sub(e.started) >= e.c.Grace {
 		e.Notify(event)
 	}
 	return nil
@@ -141,6 +210,7 @@ func (e *Engine) event(d model.Device, typ, reason string, now time.Time, notify
 func (e *Engine) Tick(now time.Time) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	e.expireVIPs(now)
 	for id, d := range e.devices {
 		if d.LastSeen.Before(now.Add(-time.Duration(e.c.RetentionDays) * 24 * time.Hour)) {
 			delete(e.devices, id)

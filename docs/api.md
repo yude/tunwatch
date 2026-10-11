@@ -7,6 +7,7 @@ Base URL: `http://127.0.0.1:8080`（既定）。時刻は RFC 3339 UTC です。
 | `GET /healthz` | HTTP プロセスの生存確認。認証不要、メタデータなし |
 | `GET /readyz` | 監視準備完了時 200、未完了時 503。認証不要 |
 | `GET /api/v1/devices` | `{ "time": "...", "devices": [...] }` |
+| `GET /api/v1/vips[?ip=<IPv4>]` | `{ "time": "...", "vips": [...] }`。観測した VRRP VIP の一覧。`ip` で特定の IPv4 に絞り込み可能 |
 | `GET /api/v1/events` | `{ "events": [...], "next_cursor": "..." }`、新しい順 |
 | `GET /api/v1/status` | readiness、`node_name`、解決済みの設定、件数、捕捉・通知のカウンター。秘密情報や他ノードの profile は含めない |
 | `GET /api/v1/stream` | SSE `snapshot` イベント、2 秒間隔。最大 16 接続 |
@@ -21,6 +22,7 @@ Base URL: `http://127.0.0.1:8080`（既定）。時刻は RFC 3339 UTC です。
   "interface": "eth0",
   "mac": "00:11:22:33:44:55",
   "ips": ["192.0.2.10"],
+  "vip_only": false,
   "hostname": {"value": "workstation.local", "source": "mdns", "confidence": "medium"},
   "vendor": "Example vendor",
   "os": {"value": "Unix / mobile 系の可能性", "source": "ip.ttl", "confidence": "low"},
@@ -35,6 +37,8 @@ Base URL: `http://127.0.0.1:8080`（既定）。時刻は RFC 3339 UTC です。
 ID は `interface/VLAN-stack/MAC` です。VLAN がないときは中央が空になります。VLAN がある場合は `vlan` フィールドも返します。ID の `/` などを query string に渡す場合は URL encode してください。同一機器の MAC ランダム化やインターフェース移動を自動で統合しません。`ips` は過去の観測値も含みます。
 
 `status`: `online`、`stale`、`offline`、`unknown`。`offline` は無通信による推定です。`hostname` / `os` の未取得時は各値が空文字です。`vendor` は未取得時省略します。
+
+`vips` はこの端末から観測した、または同じインターフェース・VLAN の IP 照合で分かった VIP の配列です。各要素は `ip`、`source`（`vrrp_advertisement` または `vrrp_mac`）、`vrid` を含みます。`vip_only: true` は VRRP 仮想 MAC、または観測した IP がすべて VIP であることを示します。Web UI はこの行を既定で隠しますが、`GET /api/v1/devices` と SSE は全端末を返します。`GET /api/v1/vips` は、端末の通常 IP としてまだ観測していない広告中の VIP も `interface`、任意の `vlan`、`ip`、`source`、`vrid` とともに返します。判定は受動観測に基づき、未観測の VIP を網羅しません。
 
 ## 履歴
 

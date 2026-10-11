@@ -186,6 +186,56 @@ test("unnamed clients filter combines with status and search", async ({
   await expect(page.locator("tbody tr")).toHaveCount(7);
 });
 
+test("VIP identities are hidden by default and can be inspected", async ({
+  page,
+  request,
+}) => {
+  expect((await request.get("/api/v1/vips")).status()).toBe(401);
+  await page.goto("/");
+  await page
+    .getByLabel("アクセストークン")
+    .fill("tunwatch-e2e-test-token-not-a-real-secret");
+  await page.getByRole("button", { name: "ダッシュボードを開く" }).click();
+  const showVIPs = page.getByRole("button", { name: "VIP も表示 1" });
+  await expect(showVIPs).toBeVisible();
+  await expect(page.locator("tbody tr")).toHaveCount(7);
+  const evidence = await page.evaluate(async () =>
+    (await fetch("/api/v1/vips")).json(),
+  );
+  expect(evidence.vips).toContainEqual({
+    interface: "demo0",
+    ip: "192.0.2.1",
+    source: "vrrp_mac",
+    vrid: 42,
+  });
+  expect(
+    await page.evaluate(async () =>
+      (await fetch("/api/v1/vips?ip=192.0.2.1")).json(),
+    ),
+  ).toMatchObject({ vips: evidence.vips });
+  expect(
+    await page.evaluate(async () =>
+      (await fetch("/api/v1/vips?ip=192.0.2.99")).json(),
+    ),
+  ).toMatchObject({ vips: [] });
+  expect(
+    await page.evaluate(async () =>
+      (await fetch("/api/v1/vips?ip=invalid")).status,
+    ),
+  ).toBe(400);
+  await showVIPs.click();
+  await expect(showVIPs).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("tbody tr")).toHaveCount(8);
+  await page.getByLabel("クライアントを検索").fill("00:00:5e:00:01:2a");
+  await expect(page.locator("tbody tr")).toHaveCount(1);
+  await page.locator("tbody tr").click();
+  await expect(page.getByRole("dialog")).toContainText("VRRP VIP");
+  await expect(page.getByRole("dialog")).toContainText("VRID 42");
+  await page.getByRole("button", { name: "閉じる", exact: true }).click();
+  await showVIPs.click();
+  await expect(page.locator("tbody tr")).toHaveCount(0);
+});
+
 test("hosts display name keeps file provenance and observed hostname", async ({
   page,
 }) => {

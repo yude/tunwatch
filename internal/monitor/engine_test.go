@@ -107,6 +107,77 @@ func TestIsolationAndCapacity(t *testing.T) {
 		t.Fatal("snapshot aliases live state")
 	}
 }
+func TestVIPDetectionKeepsPhysicalRouterAndHidesVirtualIdentity(t *testing.T) {
+	c, j, e, now := testEngine()
+	virtual := observation(now.Add(2 * time.Second))
+	virtual.MAC = "00:00:5e:00:01:2a"
+	virtual.IP = "192.0.2.1"
+	virtual.VIPs = []model.VIP{{IP: virtual.IP, Source: "vrrp_mac", VRID: 42}}
+	var notifications []model.Event
+	e.Notify = func(event model.Event) { notifications = append(notifications, event) }
+	if err := e.Observe(virtual); err != nil {
+		t.Fatal(err)
+	}
+	router := observation(now.Add(3 * time.Second))
+	router.VIPs = []model.VIP{{IP: virtual.IP, Source: "vrrp_advertisement", VRID: 42}}
+	if err := e.Observe(router); err != nil {
+		t.Fatal(err)
+	}
+	devices := e.Devices()
+	if len(devices) != 2 || len(e.VIPs()) != 1 || e.VIPs()[0].Source != "vrrp_advertisement" {
+		t.Fatalf("VIP evidence lost: devices=%+v vips=%+v", devices, e.VIPs())
+	}
+	for _, d := range devices {
+		if d.MAC == virtual.MAC && (!d.VIPOnly || len(d.VIPs) != 1) {
+			t.Fatalf("virtual identity not marked: %+v", d)
+		}
+		if d.MAC == router.MAC && (d.VIPOnly || len(d.VIPs) != 1 || d.VIPs[0].IP != virtual.IP) {
+			t.Fatalf("physical router incorrectly hidden: %+v", d)
+		}
+	}
+	if len(notifications) != 1 || notifications[0].Device.MAC != router.MAC {
+		t.Fatalf("virtual identity notification leaked: %+v", notifications)
+	}
+	restored := map[string]model.Device{}
+	for _, d := range devices {
+		restored[d.ID] = d
+	}
+	e = NewEngine(c, j, Vendors{}, restored, now.Add(time.Hour))
+	if len(e.VIPs()) != 1 || len(e.Devices()) != 2 {
+		t.Fatal("VIP evidence not restored")
+	}
+	if err := e.Tick(now.Add(2 * time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if len(e.VIPs()) != 0 {
+		t.Fatal("stale VIP evidence did not expire")
+	}
+}
+
+func TestVIPEvidenceIsScopedAndRolledBackOnStorageFailure(t *testing.T) {
+	_, j, e, now := testEngine()
+	j.fail = true
+	o := observation(now)
+	o.VIPs = []model.VIP{{IP: "192.0.2.1", Source: "vrrp_advertisement", VRID: 42}}
+	if err := e.Observe(o); err == nil || len(e.VIPs()) != 0 {
+		t.Fatalf("failed observation retained VIP: %+v", e.VIPs())
+	}
+	j.fail = false
+	if err := e.Observe(o); err != nil {
+		t.Fatal(err)
+	}
+	other := observation(now.Add(time.Second))
+	other.VLAN = "20"
+	other.IP = "192.0.2.1"
+	if err := e.Observe(other); err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range e.Devices() {
+		if d.VLAN == "20" && (d.VIPOnly || len(d.VIPs) != 0) {
+			t.Fatalf("VIP leaked across VLANs: %+v", d)
+		}
+	}
+}
 func TestScanStaysOnLinkAndBounded(t *testing.T) {
 	local := []netip.Prefix{netip.MustParsePrefix("192.0.2.10/24")}
 	p, err := scanTargets([]netip.Prefix{netip.MustParsePrefix("192.0.2.0/29")}, local)

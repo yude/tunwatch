@@ -89,6 +89,66 @@ func TestNDPSenderNotTarget(t *testing.T) {
 		t.Fatal("accepted invalid NDP hop limit")
 	}
 }
+func TestVRRPAdvertisementAndVirtualARP(t *testing.T) {
+	frame := make([]byte, 14+20+12)
+	copy(frame[6:12], []byte{0, 17, 34, 51, 68, 85})
+	binary.BigEndian.PutUint16(frame[12:14], 0x800)
+	ip := frame[14:]
+	ip[0], ip[8], ip[9] = 0x45, 255, 112
+	binary.BigEndian.PutUint16(ip[2:4], uint16(len(ip)))
+	copy(ip[12:16], []byte{192, 0, 2, 10})
+	copy(ip[16:20], []byte{224, 0, 0, 18})
+	vrrp := ip[20:]
+	copy(vrrp, []byte{0x31, 42, 100, 1, 0, 100, 0, 0, 192, 0, 2, 1})
+	binary.BigEndian.PutUint16(vrrp[6:8], testChecksum(vrrp))
+	o, ok := Decode(frame, "eth0", time.Now())
+	if !ok || o.IP != "192.0.2.10" || o.Source != "vrrp" || len(o.VIPs) != 1 || o.VIPs[0].IP != "192.0.2.1" || o.VIPs[0].VRID != 42 {
+		t.Fatalf("VRRP advertisement not decoded: %+v, %v", o, ok)
+	}
+	ip[8] = 64
+	if _, ok := Decode(frame, "eth0", time.Now()); ok {
+		t.Fatal("accepted off-link VRRP")
+	}
+	ip[8] = 255
+	vrrp[11]++
+	if _, ok := Decode(frame, "eth0", time.Now()); ok {
+		t.Fatal("accepted corrupt VRRP checksum")
+	}
+
+	arpFrame := arp()
+	copy(arpFrame[6:12], []byte{0, 17, 34, 51, 68, 85})
+	copy(arpFrame[22:28], []byte{0, 0, 0x5e, 0, 1, 42})
+	o, ok = Decode(arpFrame, "eth0", time.Now())
+	if !ok || o.MAC != "00:00:5e:00:01:2a" || len(o.VIPs) != 1 || o.VIPs[0].Source != "vrrp_mac" {
+		t.Fatalf("virtual ARP not decoded: %+v, %v", o, ok)
+	}
+}
+
+func TestVRRPv2AndLegacyV3Checksums(t *testing.T) {
+	src, dst := []byte{192, 0, 2, 10}, []byte{224, 0, 0, 18}
+	v2 := []byte{0x21, 7, 100, 1, 0, 1, 0, 0, 192, 0, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0}
+	binary.BigEndian.PutUint16(v2[6:8], testChecksum(v2))
+	if vips, ok := decodeVRRPIPv4(v2, src, dst, 255); !ok || len(vips) != 1 || vips[0].IP != "192.0.2.1" {
+		t.Fatalf("valid v2 advertisement rejected: %+v, %v", vips, ok)
+	}
+	v3 := []byte{0x31, 7, 100, 1, 0, 100, 0, 0, 192, 0, 2, 1}
+	withPseudo := append(vrrpPseudoHeader(src, dst, len(v3)), v3...)
+	binary.BigEndian.PutUint16(v3[6:8], testChecksum(withPseudo))
+	if vips, ok := decodeVRRPIPv4(v3, src, dst, 255); !ok || len(vips) != 1 {
+		t.Fatalf("legacy v3 checksum rejected: %+v, %v", vips, ok)
+	}
+}
+
+func testChecksum(p []byte) uint16 {
+	var sum uint32
+	for i := 0; i < len(p); i += 2 {
+		sum += uint32(binary.BigEndian.Uint16(p[i:]))
+	}
+	for sum>>16 != 0 {
+		sum = (sum & 0xffff) + (sum >> 16)
+	}
+	return ^uint16(sum)
+}
 func FuzzDecode(f *testing.F) {
 	f.Add(arp())
 	f.Add([]byte{})

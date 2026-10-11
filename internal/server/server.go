@@ -10,12 +10,15 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"net/netip"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/yude/tunwatch/internal/config"
+	"github.com/yude/tunwatch/internal/model"
 	"github.com/yude/tunwatch/internal/monitor"
 	"github.com/yude/tunwatch/internal/store"
 )
@@ -55,6 +58,18 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.Handle("GET /api/v1/devices", s.auth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		respond(w, map[string]any{"devices": s.Engine.Devices(), "time": time.Now().UTC()})
+	})))
+	mux.Handle("GET /api/v1/vips", s.auth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		vips := s.Engine.VIPs()
+		if raw := r.URL.Query().Get("ip"); raw != "" {
+			ip, err := netip.ParseAddr(raw)
+			if err != nil || !ip.Is4() {
+				http.Error(w, "valid IPv4 address required", 400)
+				return
+			}
+			vips = slices.DeleteFunc(vips, func(vip model.ScopedVIP) bool { return vip.IP != ip.String() })
+		}
+		respond(w, map[string]any{"vips": vips, "time": time.Now().UTC()})
 	})))
 	mux.Handle("GET /api/v1/events", s.auth(http.HandlerFunc(s.events)))
 	mux.Handle("GET /api/v1/stream", s.auth(http.HandlerFunc(s.stream)))
